@@ -212,7 +212,7 @@ func _fill_options(v: VBoxContainer) -> void:
 		var msgs := {"idle": "Appuie sur Rechercher pour vérifier.", "checking": "Recherche en cours…",
 			"uptodate": "Ton jeu est à jour.", "downloading": "Téléchargement de la version %d…" % Updater.remote_build,
 			"ready": "Version %d prête : ferme puis rouvre l'appli pour l'installer." % Updater.ready_build,
-			"error": "Impossible de vérifier (pas d'internet ?). Réessaie plus tard."}
+			"error": "Échec de la vérification (%s). Réessaie, et envoie-moi ce code si ça persiste." % Updater.last_error}
 		info.text = "Version %d · %s" % [Updater.active_build, msgs.get(s, "")]
 		chk.disabled = s in ["checking", "downloading"]
 		quit_b.visible = s == "ready"

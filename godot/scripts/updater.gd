@@ -71,26 +71,51 @@ func _save_state(d: Dictionary) -> void:
 	var f := FileAccess.open(STATE, FileAccess.WRITE)
 	f.store_string(JSON.stringify(d))
 
+const API := "https://api.github.com/repos/PoppyMASTER/Spike/releases/tags/godot-latest"
+var last_error := ""
+
+## GET helper: [http code, body] — result != OK is reported as code -result
+func _fetch(url: String, headers := PackedStringArray()) -> Array:
+	var req := HTTPRequest.new()
+	req.timeout = 15.0
+	req.max_redirects = 10
+	add_child(req)
+	var err := req.request(url, headers)
+	if err != OK:
+		req.queue_free()
+		return [-1000 - err, PackedByteArray()]
+	var r = await req.request_completed
+	req.queue_free()
+	if r[0] != HTTPRequest.RESULT_SUCCESS:
+		return [-int(r[0]), PackedByteArray()]
+	return [int(r[1]), r[3]]
+
+## latest build number: release manifest first, then the GitHub API (release title "… build N")
+func _remote_build() -> int:
+	var a := await _fetch(BASE + "manifest.json")
+	if a[0] == 200:
+		var m = JSON.parse_string((a[1] as PackedByteArray).get_string_from_utf8())
+		if m is Dictionary and m.has("build"):
+			return int(m.build)
+	var e1 := "manifeste %d" % a[0]
+	var b := await _fetch(API, PackedStringArray(["Accept: application/vnd.github+json", "User-Agent: SkySpike"]))
+	if b[0] == 200:
+		var j = JSON.parse_string((b[1] as PackedByteArray).get_string_from_utf8())
+		if j is Dictionary:
+			var rx := RegEx.create_from_string("build (\\d+)")
+			var mt := rx.search(String(j.get("name", "")))
+			if mt:
+				return int(mt.get_string(1))
+	last_error = "%s, api %d" % [e1, b[0]]
+	return -1
+
 func _check() -> void:
 	_busy = true
 	_set_status("checking")
-	var req := HTTPRequest.new()
-	req.timeout = 8.0
-	add_child(req)
-	if req.request(BASE + "manifest.json") != OK:
-		req.queue_free()
+	var remote := await _remote_build()
+	if remote < 0:
 		_done("error")
 		return
-	var r = await req.request_completed
-	req.queue_free()
-	if r[1] != 200:
-		_done("error")
-		return
-	var m = JSON.parse_string((r[3] as PackedByteArray).get_string_from_utf8())
-	if not (m is Dictionary) or not m.has("build"):
-		_done("error")
-		return
-	var remote := int(m.build)
 	remote_build = remote
 	if remote <= active_build:
 		_done("uptodate")
@@ -101,10 +126,12 @@ func _check() -> void:
 	_set_status("downloading")
 	var dl := HTTPRequest.new()
 	dl.download_file = PCK_NEW
-	dl.timeout = 120.0
+	dl.timeout = 180.0
+	dl.max_redirects = 10
 	add_child(dl)
-	if dl.request(BASE + String(m.get("pck", "update.pck"))) != OK:
+	if dl.request(BASE + "update.pck") != OK:
 		dl.queue_free()
+		last_error = "téléchargement"
 		_done("error")
 		return
 	var r2 = await dl.request_completed
@@ -118,6 +145,7 @@ func _check() -> void:
 		update_ready.emit(remote)
 	else:
 		DirAccess.remove_absolute(PCK_NEW)
+		last_error = "téléchargement %d/%d" % [r2[0], r2[1]]
 		_done("error")
 
 func _done(s: String) -> void:

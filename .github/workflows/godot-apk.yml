@@ -130,3 +130,5 @@ jobs:
           gh release upload godot-latest update.pck SkySpike-Godot.apk --clobber
           # manifest last, so the app never sees a build number before its pack is online
           gh release upload godot-latest manifest.json --clobber
+          # build number also in the title: fallback read by the app through the GitHub API
+          gh release edit godot-latest --title "SkySpike Godot build ${{ github.run_number }}"
