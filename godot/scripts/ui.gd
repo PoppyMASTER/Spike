@@ -36,6 +36,8 @@ func setup(game: Node) -> void:
 		if ResourceLoader.exists(path):
 			cut_tex[id] = load(path)
 	vignette = _make_vignette()
+	# deliver every touch move as it arrives (lower latency than per-frame accumulation)
+	Input.use_accumulated_input = false
 
 func _make_vignette() -> Texture2D:
 	var gt := GradientTexture2D.new()
@@ -101,7 +103,7 @@ func _touch_down(idx: int, pos: Vector2) -> void:
 		g.paused = true
 		return
 	for k in ["jump", "act", "feint"]:
-		if pos.distance_to(btn_pos(k)) < btn_r(k) * 1.15:
+		if pos.distance_to(btn_pos(k)) < btn_r(k) * 1.35:
 			btn_touch[idx] = k
 			_set_key(k, true)
 			return

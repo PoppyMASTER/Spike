@@ -1,6 +1,8 @@
 extends Node2D
 ## Draws the match: arena, court, net, players (procedural skeleton), ball, effects.
 ## Same projection as the web build: x along the court, y height, z depth (0 front .. 1 back).
+## Performance notes: circles / ellipses / glows are textured quads (they batch on the GPU),
+## limbs are plain lines with textured round caps, and no lambdas are created per frame.
 
 const POSE0 := {"crouch": 0.12, "lean": 0.25, "head": 0.0, "ua1": 0.6, "fa1": 0.9, "ua2": 0.5, "fa2": 0.9,
 	"ta1": 0.25, "sa1": -0.45, "ta2": -0.1, "sa2": -0.35, "rot": 0.0, "drop": 0.0, "f1": 0.22, "f2": -0.15, "l1": 0.0, "l2": 0.0, "ground": 1.0}
@@ -22,11 +24,25 @@ var arena_tex: Texture2D
 var arena_vp: SubViewport
 var add_layer: Node2D
 var top_layer: Node2D
+var bench := false
+var t_draw := 0.0
+var t_pose := 0.0
+var DOT: Texture2D     # hard-edged white disc
+var SOFT: Texture2D    # soft radial glow
+var UC12 := PackedVector2Array()
+var UC24 := PackedVector2Array()
 
 func setup(game: Node) -> void:
 	g = game
+	process_priority = 10
 	font_d = load("res://fonts/Anton-Regular.ttf")
 	font_b = load("res://fonts/BarlowCondensed-Bold.ttf")
+	DOT = _disc_tex(false)
+	SOFT = _disc_tex(true)
+	for i in 12:
+		UC12.append(Vector2(cos(TAU * i / 12), sin(TAU * i / 12)))
+	for i in 24:
+		UC24.append(Vector2(cos(TAU * i / 24), sin(TAU * i / 24)))
 	add_layer = Node2D.new()
 	var mat := CanvasItemMaterial.new()
 	mat.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
@@ -38,6 +54,21 @@ func setup(game: Node) -> void:
 	add_child(top_layer)
 	get_viewport().size_changed.connect(_resize)
 	_resize()
+
+func _disc_tex(soft: bool) -> Texture2D:
+	var n := 64
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	for y in n:
+		for x in n:
+			var d := Vector2(x + 0.5 - n / 2.0, y + 0.5 - n / 2.0).length() / (n / 2.0)
+			var a := 0.0
+			if soft:
+				a = pow(maxf(0.0, 1.0 - d), 2.0)
+			else:
+				a = clampf((1.0 - d) * n / 2.0, 0.0, 1.0)   # 1px anti-aliased edge
+			img.set_pixel(x, y, Color(1, 1, 1, a))
+	var t := ImageTexture.create_from_image(img)
+	return t
 
 func _resize() -> void:
 	var s := get_viewport_rect().size
@@ -56,38 +87,50 @@ func P(x: float, y: float, z: float) -> Vector2:
 	CZ = z
 	return Vector2(X(x), Y(y))
 
-func ellipse_pts(c: Vector2, rx: float, ry: float, n := 20) -> PackedVector2Array:
-	var pts := PackedVector2Array()
-	for i in n:
-		var a := TAU * i / n
-		pts.append(c + Vector2(cos(a) * rx, sin(a) * ry))
-	return pts
+func dot(ci: CanvasItem, c: Vector2, r: float, col: Color) -> void:
+	ci.draw_texture_rect(DOT, Rect2(c.x - r, c.y - r, r * 2, r * 2), false, col)
+func glow(ci: CanvasItem, c: Vector2, r: float, col: Color) -> void:
+	ci.draw_texture_rect(SOFT, Rect2(c.x - r, c.y - r, r * 2, r * 2), false, col)
 func ellipse(ci: CanvasItem, c: Vector2, rx: float, ry: float, col: Color) -> void:
-	ci.draw_colored_polygon(ellipse_pts(c, rx, ry), col)
+	ci.draw_texture_rect(DOT, Rect2(c.x - rx, c.y - ry, rx * 2, ry * 2), false, col)
+func ellipse_pts(c: Vector2, rx: float, ry: float, n := 12) -> PackedVector2Array:
+	var uc := UC12 if n <= 12 else UC24
+	var pts := PackedVector2Array()
+	pts.resize(uc.size())
+	for i in uc.size():
+		pts[i] = c + Vector2(uc[i].x * rx, uc[i].y * ry)
+	return pts
 func ring(ci: CanvasItem, c: Vector2, rx: float, ry: float, col: Color, w: float) -> void:
-	var pts := ellipse_pts(c, rx, ry, 32)
+	var pts := ellipse_pts(c, rx, ry, 24)
 	pts.append(pts[0])
-	ci.draw_polyline(pts, col, w, true)
+	ci.draw_polyline(pts, col, w)
 func seg(ci: CanvasItem, a: Vector2, b: Vector2, col: Color, w: float) -> void:
-	ci.draw_line(a, b, col, w, true)
-	ci.draw_circle(a, w / 2.0, col)
-	ci.draw_circle(b, w / 2.0, col)
+	ci.draw_line(a, b, col, w)
+	var r := w * 0.5
+	ci.draw_texture_rect(DOT, Rect2(a.x - r, a.y - r, w, w), false, col)
+	ci.draw_texture_rect(DOT, Rect2(b.x - r, b.y - r, w, w), false, col)
 
-# ---------------------------------------------------------------- arena backdrop (rendered once)
+# ---------------------------------------------------------------- arena backdrop (rendered once, at native resolution)
 func _build_arena() -> void:
 	if arena_vp:
 		arena_vp.queue_free()
+	var sc := get_viewport().get_final_transform().get_scale().x
+	if sc <= 0:
+		sc = 1.0
 	var cw := int(ceil(36.0 * K * 0.6 + W))
 	var ch := int(ceil(H * 1.6))
 	arena_vp = SubViewport.new()
-	arena_vp.size = Vector2i(cw, ch)
+	arena_vp.size = Vector2i(int(cw * sc), int(ch * sc))
 	arena_vp.transparent_bg = false
 	arena_vp.render_target_update_mode = SubViewport.UPDATE_ONCE
 	var painter := Node2D.new()
+	painter.scale = Vector2(sc, sc)
 	painter.draw.connect(func(): _paint_arena(painter, cw, ch))
 	arena_vp.add_child(painter)
 	add_child(arena_vp)
 	arena_tex = arena_vp.get_texture()
+	arena_size = Vector2(cw, ch)
+var arena_size := Vector2.ONE
 
 func _paint_arena(ci: CanvasItem, cw: int, ch: int) -> void:
 	# night arena: gradient sky, roof truss, light rigs, two tiers of crowd
@@ -129,6 +172,7 @@ func _paint_arena(ci: CanvasItem, cw: int, ch: int) -> void:
 			y += stp * 0.95
 		ci.draw_rect(Rect2(0, t1 - 2, cw, 2), Color(0.35, 0.81, 0.91, 0.08))
 	ci.draw_rect(Rect2(0, ch * 0.92, cw, ch * 0.08), Color("0d1522"))
+
 
 # ---------------------------------------------------------------- poses
 func cocked(p) -> bool:
@@ -244,96 +288,122 @@ static func skel(pz: Dictionary) -> Dictionary:
 	var so := sh - Vector2(sin(pz.lean), cos(pz.lean)) * 0.04
 	return {"hip": hip, "sh": sh, "nk": nk, "hd": hd, "lg1": lg1, "lg2": lg2, "ar1": fk(so, pz.ua1, pz.fa1, 0.32, 0.31), "ar2": fk(so, pz.ua2, pz.fa2, 0.32, 0.31), "so": so}
 
-# ---------------------------------------------------------------- body
-func draw_body(ci: CanvasItem, p, pz: Dictionary, f: float, flat = null) -> void:
+
+# ---------------------------------------------------------------- body (no per-frame lambdas)
+var _bx := 0.0
+var _by := 0.0
+var _u := 1.0
+var _f := 1.0
+var _rot := 0.0
+var _drop := 0.0
+var _hip := Vector2.ZERO
+var _cr := 1.0
+var _sr := 0.0
+
+func tf(pt: Vector2) -> Vector2:
+	var x := pt.x
+	var y := pt.y
+	if _rot != 0.0:
+		var dx := x - _hip.x
+		var dy := y - _hip.y
+		x = _hip.x + dx * _cr + dy * _sr
+		y = _hip.y - dx * _sr + dy * _cr
+	y -= _drop
+	return Vector2(_bx + _f * x * _u, _by - y * _u)
+
+func limb(ci: CanvasItem, a: Vector2, b: Vector2, w: float, col: Color, outline: bool, olw: float) -> void:
+	var A := tf(a)
+	var B := tf(b)
+	if outline:
+		seg(ci, A, B, Color(OUTL, 0.7), w * _u + olw)
+	seg(ci, A, B, col, w * _u)
+
+func silhouette(ci: CanvasItem, p, pz: Dictionary, f: float, col: Color) -> void:
+	# cheap after-image: limbs + torso only
 	var s := skel(pz)
+	_setup_tf(p, pz, f, s)
+	var w := 0.11 * _u
+	for lg in [s.lg1, s.lg2]:
+		ci.draw_polyline(PackedVector2Array([tf(s.hip), tf(lg[0]), tf(lg[1])]), col, w)
+	for ar in [s.ar1, s.ar2]:
+		ci.draw_polyline(PackedVector2Array([tf(s.so), tf(ar[0]), tf(ar[1])]), col, w * 0.8)
+	ci.draw_line(tf(s.hip), tf(s.sh), col, 0.3 * _u)
+	dot(ci, tf(s.hd), 0.15 * _u, col)
+
+func _setup_tf(p, pz: Dictionary, f: float, s: Dictionary) -> void:
 	CZ = p.z
-	var u := K * BODY * scz(CZ)
-	var bx := X(p.x)
-	var by := Y(p.y)
-	var rot: float = pz.rot
-	var drop: float = pz.drop
+	_u = K * BODY * scz(CZ)
+	_bx = X(p.x)
+	_by = Y(p.y)
+	_rot = pz.rot
+	_cr = cos(_rot)
+	_sr = sin(_rot)
+	_drop = pz.drop
+	_hip = s.hip
+	_f = f
+
+func draw_body(ci: CanvasItem, p, pz: Dictionary, f: float) -> void:
+	var s := skel(pz)
+	_setup_tf(p, pz, f, s)
+	var u := _u
 	var hip: Vector2 = s.hip
-	var tf := func(pt: Vector2) -> Vector2:
-		var x := pt.x
-		var y := pt.y
-		if rot != 0.0:
-			var dx := x - hip.x
-			var dy := y - hip.y
-			x = hip.x + dx * cos(rot) + dy * sin(rot)
-			y = hip.y - dx * sin(rot) + dy * cos(rot)
-		y -= drop
-		return Vector2(bx + f * x * u, by - y * u)
 	var tc: Dictionary = TEAMC[p.side]
 	var acc := Color(p.c.acc)
 	var skin := Color(p.c.skin)
 	var dskin := skin.darkened(0.2)
 	var olw := maxf(1.0, u * 0.028)
-	var limb := func(a: Vector2, b: Vector2, w: float, col: Color, outline := true) -> void:
-		var A: Vector2 = tf.call(a)
-		var B: Vector2 = tf.call(b)
-		if flat != null:
-			seg(ci, A, B, flat, w * u)
-			return
-		if outline:
-			seg(ci, A, B, Color(OUTL, 0.7), w * u + olw)
-		seg(ci, A, B, col, w * u)
-	var leg := func(lg: Array, back: bool) -> void:
-		var sk := dskin if back else skin
-		limb.call(hip, lg[0], 0.125, sk)
-		if flat == null:
-			limb.call(hip, hip.lerp(lg[0], 0.4), 0.155, (tc.sh as Color).darkened(0.25) if back else tc.sh, false)
-		var mid: Vector2 = (lg[0] as Vector2).lerp(lg[1], 0.5)
-		limb.call(lg[0], mid, 0.095, sk)
-		limb.call(mid, lg[1], 0.095, Color("bfc1c6") if back else tc.sock)
-		if flat == null:
-			ci.draw_circle(tf.call(lg[0]), 0.058 * u, Color("151a24") if back else Color("2a3344"))
-		var F: Vector2 = tf.call(lg[1])
-		var sc: Color = flat if flat != null else (acc.darkened(0.35) if back else acc)
-		ellipse(ci, F + Vector2(f * 0.04 * u, 0), 0.1 * u, 0.042 * u, sc)
-	var arm := func(ar: Array, back: bool) -> void:
-		var sk := dskin if back else skin
-		limb.call(s.so, (s.so as Vector2).lerp(ar[0], 0.45), 0.1, tc.jer2 if back else tc.jer)
-		limb.call((s.so as Vector2).lerp(ar[0], 0.4), ar[0], 0.08, sk)
-		limb.call(ar[0], ar[1], 0.072, sk)
-		if flat == null and not back:
-			limb.call((ar[0] as Vector2).lerp(ar[1], 0.62), (ar[0] as Vector2).lerp(ar[1], 0.82), 0.085, acc, false)
-		ci.draw_circle(tf.call(ar[1]), 0.045 * u, flat if flat != null else sk)
-	leg.call(s.lg2, true)
-	arm.call(s.ar2, true)
+	var so: Vector2 = s.so
+	# back leg + arm
+	_leg(ci, s.lg2, true, hip, tc, skin, dskin, acc, olw)
+	_arm(ci, s.ar2, true, so, tc, skin, dskin, acc, olw)
+	# torso
 	var ax := Vector2(sin(pz.lean), cos(pz.lean))
 	var nx := Vector2(ax.y, -ax.x)
 	var sh: Vector2 = s.sh
-	var tp := PackedVector2Array([tf.call(hip - nx * 0.12), tf.call(hip + nx * 0.13), tf.call(sh + nx * 0.17), tf.call(sh - nx * 0.15)])
-	if flat != null:
-		ci.draw_colored_polygon(tp, flat)
-	else:
-		ci.draw_colored_polygon(tp, tc.jer)
-		var m3 := tp[3].lerp(tp[2], 0.45)
-		var m0 := tp[0].lerp(tp[1], 0.45)
-		ci.draw_colored_polygon(PackedVector2Array([tp[0], tp[3], m3, m0]), tc.jer2)
-		var outline := tp.duplicate()
-		outline.append(tp[0])
-		ci.draw_polyline(outline, Color(OUTL, 0.6), olw, true)
-		ci.draw_line(tp[3], tp[2], acc, maxf(1.0, u * 0.025), true)
-		ci.draw_line(tp[1].lerp(tp[0], 0.25), tp[2].lerp(tp[3], 0.25), Color(1, 1, 1, 0.28), maxf(1.0, u * 0.04), true)
-		if u > 26:
-			var c0: Vector2 = tf.call((hip + sh) / 2.0 + Vector2(0, 0.05))
-			ci.draw_string(font_d, c0 + Vector2(-u * 0.1, u * 0.08), str(p.c.num), HORIZONTAL_ALIGNMENT_CENTER, u * 0.2, int(u * 0.2), acc)
-		ci.draw_circle((tf.call(hip - nx * 0.13 + Vector2(0, 0.02)) + tf.call(hip + nx * 0.14 + Vector2(0, 0.02))) / 2.0, 0.13 * u, tc.sh)
-	leg.call(s.lg1, false)
-	var hc: Vector2 = tf.call(s.hd)
-	if flat != null:
-		ci.draw_circle(hc, 0.13 * u, flat)
-	else:
-		limb.call(s.sh, s.nk, 0.07, skin, false)
-		var ang: float = f * (pz.lean * 0.55 + pz.head) + f * rot
-		ci.draw_set_transform(hc, ang, Vector2.ONE)
-		draw_mini_head(ci, p.c, 0.135 * u, f)
-		ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-	arm.call(s.ar1, false)
+	var tp := PackedVector2Array([tf(hip - nx * 0.12), tf(hip + nx * 0.13), tf(sh + nx * 0.17), tf(sh - nx * 0.15)])
+	var ol := tp.duplicate()
+	ol.append(tp[0])
+	ci.draw_colored_polygon(tp, tc.jer)
+	ci.draw_colored_polygon(PackedVector2Array([tp[0], tp[3], tp[3].lerp(tp[2], 0.45), tp[0].lerp(tp[1], 0.45)]), tc.jer2)
+	ci.draw_polyline(ol, Color(OUTL, 0.6), olw)
+	ci.draw_line(tp[3], tp[2], acc, maxf(1.0, u * 0.025))
+	if u > 26:
+		var c0 := tf((hip + sh) / 2.0 + Vector2(0, 0.05))
+		ci.draw_string(font_d, c0 + Vector2(-u * 0.1, u * 0.08), str(p.c.num), HORIZONTAL_ALIGNMENT_CENTER, u * 0.2, int(u * 0.2), acc)
+	dot(ci, (tf(hip - nx * 0.13 + Vector2(0, 0.02)) + tf(hip + nx * 0.14 + Vector2(0, 0.02))) / 2.0, 0.13 * u, tc.sh)
+	# front leg, head, front arm
+	_leg(ci, s.lg1, false, hip, tc, skin, dskin, acc, olw)
+	var hc := tf(s.hd)
+	limb(ci, s.sh, s.nk, 0.07, skin, false, olw)
+	ci.draw_set_transform(hc, f * (pz.lean * 0.55 + pz.head) + f * _rot, Vector2.ONE)
+	draw_mini_head(ci, p.c, 0.135 * u, f)
+	ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	_arm(ci, s.ar1, false, so, tc, skin, dskin, acc, olw)
 
-func quad_pts(a: Vector2, c: Vector2, b: Vector2, n := 8) -> PackedVector2Array:
+func _leg(ci: CanvasItem, lg: Array, back: bool, hip: Vector2, tc: Dictionary, skin: Color, dskin: Color, acc: Color, olw: float) -> void:
+	var sk := dskin if back else skin
+	var k: Vector2 = lg[0]
+	var ft: Vector2 = lg[1]
+	limb(ci, hip, k, 0.125, sk, true, olw)
+	limb(ci, hip, hip.lerp(k, 0.4), 0.155, (tc.sh as Color).darkened(0.25) if back else tc.sh, false, olw)
+	var mid := k.lerp(ft, 0.5)
+	limb(ci, k, mid, 0.095, sk, true, olw)
+	limb(ci, mid, ft, 0.095, Color("bfc1c6") if back else tc.sock, true, olw)
+	dot(ci, tf(k), 0.058 * _u, Color("151a24") if back else Color("2a3344"))
+	ellipse(ci, tf(ft) + Vector2(_f * 0.04 * _u, 0), 0.1 * _u, 0.042 * _u, acc.darkened(0.35) if back else acc)
+
+func _arm(ci: CanvasItem, ar: Array, back: bool, so: Vector2, tc: Dictionary, skin: Color, dskin: Color, acc: Color, olw: float) -> void:
+	var sk := dskin if back else skin
+	var el: Vector2 = ar[0]
+	var hd: Vector2 = ar[1]
+	limb(ci, so, so.lerp(el, 0.45), 0.1, tc.jer2 if back else tc.jer, true, olw)
+	limb(ci, so.lerp(el, 0.4), el, 0.08, sk, true, olw)
+	limb(ci, el, hd, 0.072, sk, true, olw)
+	if not back:
+		limb(ci, el.lerp(hd, 0.62), el.lerp(hd, 0.82), 0.085, acc, false, olw)
+	dot(ci, tf(hd), 0.045 * _u, sk)
+
+func quad_pts(a: Vector2, c: Vector2, b: Vector2, n := 6) -> PackedVector2Array:
 	var pts := PackedVector2Array()
 	for i in range(n + 1):
 		var t := float(i) / n
@@ -344,10 +414,10 @@ func draw_mini_head(ci: CanvasItem, c: Dictionary, r: float, f: float) -> void:
 	var hair := Color(c.hair)
 	var st: int = int(c.style)
 	if st == 3:
-		ci.draw_colored_polygon(ellipse_pts(Vector2(-f * r * 1.15, r * 0.15), r * 0.38, r * 0.75), hair)
+		ellipse(ci, Vector2(-f * r * 1.15, r * 0.15), r * 0.38, r * 0.75, hair)
 	if st == 1:
 		ci.draw_colored_polygon(PackedVector2Array([Vector2(-f * r, -r * 0.2), Vector2(-f * r * 1.05, r * 0.95), Vector2(f * r * 0.1, r * 0.95), Vector2(f * r * 0.2, 0)]), hair)
-	ci.draw_colored_polygon(ellipse_pts(Vector2(-f * r * 0.12, -r * 0.12), r * 1.05, r * 1.02), hair)
+	ellipse(ci, Vector2(-f * r * 0.12, -r * 0.12), r * 1.05, r * 1.02, hair)
 	if st == 0:
 		for i in 4:
 			var a := -PI / 2 - f * (0.5 + i * 0.42)
@@ -356,31 +426,31 @@ func draw_mini_head(ci: CanvasItem, c: Dictionary, r: float, f: float) -> void:
 	if st == 4:
 		for i in 6:
 			var a := -PI * 0.95 + i * 0.38
-			ci.draw_circle(Vector2(-f * r * 0.1 + cos(a) * r * 0.95 * f, -r * 0.1 + sin(a) * r * 0.95), r * 0.38, hair)
-	# face
+			dot(ci, Vector2(-f * r * 0.1 + cos(a) * r * 0.95 * f, -r * 0.1 + sin(a) * r * 0.95), r * 0.38, hair)
 	var face := quad_pts(Vector2(f * r * 0.05, -r * 0.45), Vector2(f * r * 0.95, -r * 0.35), Vector2(f * r * 0.85, r * 0.35))
 	face.append_array(quad_pts(Vector2(f * r * 0.85, r * 0.35), Vector2(f * r * 0.6, r * 0.95), Vector2(f * r * 0.05, r * 0.85)))
 	ci.draw_colored_polygon(face, Color(c.skin))
-	ci.draw_colored_polygon(ellipse_pts(Vector2(f * r * 0.3, -r * 0.28), r * 0.55, r * 0.14), Color(0, 0, 0, 0.12))
+	ellipse(ci, Vector2(f * r * 0.3, -r * 0.28), r * 0.55, r * 0.14, Color(0, 0, 0, 0.12))
 	var bangs := quad_pts(Vector2(-f * r * 0.7, -r * 0.85), Vector2(f * r * 0.9, -r * 1.25), Vector2(f * r * 1.02, -r * 0.05))
 	bangs.append_array(PackedVector2Array([Vector2(f * r * 0.72, -r * 0.38), Vector2(f * r * 0.6, -r * 0.05), Vector2(f * r * 0.38, -r * 0.42), Vector2(f * r * 0.15, -r * 0.15), Vector2(0, -r * 0.5)]))
 	ci.draw_colored_polygon(bangs, hair)
 	if c.band != null:
-		ci.draw_colored_polygon(ellipse_pts(Vector2(0, -r * 0.42), r * 1.02, r * 0.16), Color(c.band))
-	ci.draw_arc(Vector2(-f * r * 0.1, -r * 0.1), r * 0.72, -2.5 if f > 0 else -1.2, -1.9 if f > 0 else -0.6, 6, Color(1, 1, 1, 0.4), maxf(1.0, r * 0.14), true)
+		ellipse(ci, Vector2(0, -r * 0.42), r * 1.02, r * 0.16, Color(c.band))
 	if r > 4:
 		ci.draw_rect(Rect2(f * r * 0.55 - r * 0.07, -r * 0.02, r * 0.14, r * 0.26), Color("161922"))
 		ci.draw_rect(Rect2(f * r * 0.52 - r * 0.14, -r * 0.15, r * 0.28, r * 0.07), Color("161922"))
 	var outline := ellipse_pts(Vector2(-f * r * 0.05, -r * 0.05), r * 1.08, r * 1.06, 24)
 	outline.append(outline[0])
-	ci.draw_polyline(outline, Color(OUTL, 0.55), maxf(1.0, r * 0.08), true)
+	ci.draw_polyline(outline, Color(OUTL, 0.55), maxf(1.0, r * 0.08))
 
 # ---------------------------------------------------------------- frame
 func _process(delta: float) -> void:
 	if g == null or g.players.is_empty():
 		return
+	var tp0 := Time.get_ticks_usec()
 	for p in g.players:
 		update_pose(p, delta)
+	t_pose += Time.get_ticks_usec() - tp0
 	# zoom / shake / tilt around the ball
 	CZ = g.ball.z
 	var f0 := Vector2(X(g.ball.x), Y(g.ball.y))
@@ -396,12 +466,17 @@ func _process(delta: float) -> void:
 func _draw() -> void:
 	if g == null or g.players.is_empty():
 		return
+	var td0 := Time.get_ticks_usec()
+	_draw_main()
+	t_draw += Time.get_ticks_usec() - td0
+
+func _draw_main() -> void:
 	# arena
 	CZ = 1.5
 	var yb := Y(0)
 	if arena_tex:
-		var sz := arena_tex.get_size()
-		draw_texture(arena_tex, Vector2(W / 2.0 - g.cam_x * K * 0.45 - sz.x / 2.0, yb - sz.y))
+		var sz := arena_size
+		draw_texture_rect(arena_tex, Rect2(Vector2(W / 2.0 - g.cam_x * K * 0.45 - sz.x / 2.0, yb - sz.y), sz), false)
 	draw_floor()
 	if g.dim > 0.02:
 		draw_rect(Rect2(-W, -H, W * 3, H * 3), Color(0.016, 0.024, 0.04, g.dim * 0.62))
@@ -429,9 +504,9 @@ func draw_floor() -> void:
 	draw_colored_polygon(PackedVector2Array([P(-3, 0, 0), P(3, 0, 0), P(3, 0, 1), P(-3, 0, 1)]), Color(1, 1, 1, 0.035))
 	var lc := Color("e9f2f2")
 	for pr in [[-9, 0, 9, 0], [-9, 1, 9, 1], [-9, 0, -9, 1], [9, 0, 9, 1]]:
-		draw_line(P(pr[0], 0, pr[1]), P(pr[2], 0, pr[3]), lc, 3.0, true)
+		draw_line(P(pr[0], 0, pr[1]), P(pr[2], 0, pr[3]), lc, 3.0)
 	for x in [-3, 3, 0]:
-		draw_line(P(x, 0, 0), P(x, 0, 1), Color(lc, 0.55), 1.8, true)
+		draw_line(P(x, 0, 0), P(x, 0, 1), Color(lc, 0.55), 1.8)
 	CZ = -0.7
 	var fe := Y(0)
 	draw_rect(Rect2(-W, fe, W * 3, H), Color(0, 0, 0, 0.18))
@@ -493,7 +568,7 @@ func draw_ball() -> void:
 	var r := maxf(4.0, K * 0.13 * scz(CZ))
 	var c := Vector2(X(b.x), Y(b.y))
 	ellipse(self, Vector2(c.x, Y(0)), K * 0.14 * scz(CZ) * (1.0 - minf(0.6, b.y * 0.06)), K * 0.045, Color(0, 0, 0, 0.4))
-	draw_circle(c, r, Color("fdf8e8"))
+	dot(self, c, r, Color("fdf8e8"))
 	var a: float = b.spin
 	draw_arc(c + Vector2(cos(a), sin(a)) * r * 0.45, r * 0.6, a + 1.8, a + 4.5, 10, Color("ffcf3c"), r * 0.45, true)
 	draw_arc(c - Vector2(cos(a), sin(a)) * r * 0.45, r * 0.6, a - 1.3, a + 1.3, 10, Color("2f6fd6"), r * 0.45, true)
@@ -527,6 +602,11 @@ func draw_markers() -> void:
 func _draw_add() -> void:
 	if g == null or g.players.is_empty():
 		return
+	var td0 := Time.get_ticks_usec()
+	_draw_add_main()
+	t_draw += Time.get_ticks_usec() - td0
+
+func _draw_add_main() -> void:
 	var ci := add_layer
 	var b = g.ball
 	# persistent trajectory lines
@@ -549,32 +629,35 @@ func _draw_add() -> void:
 	CZ = b.z
 	var c := Vector2(X(b.x), Y(b.y))
 	var gc: Color = g.trail_col[0] if g.trail_hot else Color(1, 0.81, 0.24)
-	for i in 4:
-		ci.draw_circle(c, K * 0.13 * (1.6 + i * 0.7), Color(gc, 0.09))
+	glow(ci, c, K * 0.13 * 3.6, Color(gc, 0.55))
 	# player auras (ult ready) and ghosts
 	for p in g.players:
 		if p.ult_on and p.ult >= 1.0:
 			CZ = p.z
-			var a := 0.12 + 0.08 * sin(g.gt * 10)
-			for i in 3:
-				ci.draw_circle(Vector2(X(p.x), Y(p.y + 0.8)), K * (0.5 + i * 0.35), Color(0.78, 0.55, 1, a))
+			var a := 0.35 + 0.25 * sin(g.gt * 10)
+			glow(ci, Vector2(X(p.x), Y(p.y + 0.8)), K * 1.3, Color(0.78, 0.55, 1, a))
+		# after-images only for players flying or diving (max 3 each), drawn as cheap silhouettes
+		if p.ghosts.is_empty():
+			continue
 		var cols: Array = g.elem_cols(p)
-		for gh in p.ghosts:
+		var n0: int = maxi(0, p.ghosts.size() - 3)
+		for gi in range(n0, p.ghosts.size()):
+			var gh = p.ghosts[gi]
 			var a: float = 1.0 - (g.gt - gh.t) / 0.22
-			if a <= 0:
+			if a <= 0 or gh.pz.is_empty():
 				continue
 			var ox: float = p.x
 			var oy: float = p.y
 			p.x = gh.x
 			p.y = gh.y
-			draw_body(ci, p, gh.pz if not gh.pz.is_empty() else POSE0, gh.f, Color(cols[0], a * 0.16))
+			silhouette(ci, p, gh.pz, gh.f, Color(cols[0], a * 0.22))
 			p.x = ox
 			p.y = oy
 	# particles
 	for pa in g.parts:
 		var k: float = 1.0 - (g.gt - pa.t0) / pa.life
 		CZ = pa.z
-		ci.draw_circle(Vector2(X(pa.x), Y(pa.y)), maxf(1.0, pa.sz * K * scz(CZ)), Color(pa.col, k))
+		dot(ci, Vector2(X(pa.x), Y(pa.y)), maxf(1.0, pa.sz * K * scz(CZ)), Color(pa.col, k))
 	# effects
 	for o in g.fx:
 		var k: float = (g.gt - o.t0) / o.dur
@@ -602,7 +685,7 @@ func _draw_add() -> void:
 					var spd := rng.randf()
 					var dx := (0.3 + spd * 2.8) * (1.4 if side == o.dir else 0.8) * side * sqrt(k) * 1.6
 					var rr := (0.25 + rng.randf() * 0.5) * (0.6 + k * 1.6)
-					ci.draw_circle(Vector2(X(o.x + dx), Y(rr * 0.55)), rr * K * scz(CZ), Color(0.6, 0.63, 0.69, 0.16 * a))
+					glow(ci, Vector2(X(o.x + dx), Y(rr * 0.55)), rr * K * scz(CZ) * 1.4, Color(0.6, 0.63, 0.69, 0.3 * a))
 
 func _path(ci: CanvasItem, pts_in: Array, col: Array, al: float) -> void:
 	if pts_in.size() < 2:

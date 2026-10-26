@@ -29,6 +29,8 @@ func _ready() -> void:
 	var args := OS.get_cmdline_user_args()
 	if "--sim" in args:
 		_sim(int(args[args.find("--sim") + 1]))
+	elif "--bench" in args:
+		_bench()
 	elif "--bot" in args:
 		_bot()
 	elif "--htest" in args:
@@ -39,11 +41,18 @@ func _ready() -> void:
 		# idle background match behind the menu
 		game.start_match(ui.TEAM_L, ui.TEAM_R, "NONE")
 
-func _physics_process(delta: float) -> void:
-	var dt := delta
+func _process(delta: float) -> void:
+	# simulation runs once per displayed frame (internal substeps keep physics precise):
+	# no mismatch between a fixed physics rate and 60 / 90 / 120 Hz screens, so motion stays smooth
+	# and touches are handled in the same frame they arrive.
+	if bench_on:
+		b_frames += 1
+	var dt := minf(delta, 0.05)
 	if game.cutin_data != null and Time.get_ticks_msec() / 1000.0 - game.cutin_t0 < 1.0:
 		dt *= 0.05
+	var ts := Time.get_ticks_usec()
 	game.step(dt)
+	b_step += Time.get_ticks_usec() - ts
 
 func _sim(n: int) -> void:
 	game.sfx = null
@@ -139,4 +148,23 @@ func _bot() -> void:
 			game.cutin_data = null
 			steps += 1
 		print(r, " score ", game.score, "  human touches ", touches, "  stats ", p.stat)
+	get_tree().quit()
+
+var bench_on := false
+var b_draw := 0.0
+var b_step := 0.0
+var b_frames := 0
+func _bench() -> void:
+	ui.role = "NONE"
+	ui._start()
+	bench_on = true
+	view.bench = true
+	await get_tree().create_timer(2.0).timeout
+	view.t_draw = 0.0
+	b_frames = 0
+	var t0 := Time.get_ticks_usec()
+	await get_tree().create_timer(12.0).timeout
+	var el := (Time.get_ticks_usec() - t0) / 1e6
+	print("frames %d in %.1fs -> %.1f fps" % [b_frames, el, b_frames / el])
+	print("avg view draw (CPU) %.2f ms, avg game.step %.2f ms, avg pose %.2f ms" % [view.t_draw / maxf(1, b_frames) / 1000.0, b_step / maxf(1, b_frames) / 1000.0, view.t_pose / maxf(1, b_frames) / 1000.0])
 	get_tree().quit()
