@@ -34,6 +34,7 @@ func begin(c: Dictionary) -> void:
 	view.set_script(load("res://scripts/view.gd"))
 	add_child(view)
 	view.stage = c.get("stage", "arena")
+	view.mirror = c.get("net", "") == "guest"
 	view.setup(game)
 	var layer := CanvasLayer.new()
 	add_child(layer)
@@ -102,7 +103,8 @@ func _send_input(delta: float) -> void:
 			game.edge[k] = false
 			_cnt[k] += 1
 	var k: Dictionary = game.keys
-	var d := {"t": "in", "k": [k.left, k.right, k.jump], "s": snappedf(game.stick_val, 0.05),
+	# mirrored screen: "right" on the guest's screen is toward -x on the court
+	var d := {"t": "in", "k": [k.right, k.left, k.jump], "s": -snappedf(game.stick_val, 0.05),
 		"c": [_cnt.jump, _cnt.act, _cnt.feint]}
 	var sig := str(d)
 	_in_acc += delta

@@ -146,6 +146,10 @@ func _build_arena() -> void:
 	arena_tex = arena_vp.get_texture()
 	arena_size = Vector2(cw, ch)
 var arena_size := Vector2.ONE
+## online guest: the whole court is drawn mirrored so the local player's team is on the left
+var mirror := false
+func _mx() -> float:
+	return -1.0 if mirror else 1.0
 
 func _paint_arena(ci: CanvasItem, cw: int, ch: int) -> void:
 	match stage:
@@ -519,7 +523,9 @@ func draw_body(ci: CanvasItem, p, pz: Dictionary, f: float) -> void:
 	ci.draw_line(tp[3], tp[2], acc, maxf(1.0, u * 0.025))
 	if u > 26:
 		var c0 := tf((hip + sh) / 2.0 + Vector2(0, 0.05))
-		ci.draw_string(font_d, c0 + Vector2(-u * 0.1, u * 0.08), str(p.c.num), HORIZONTAL_ALIGNMENT_CENTER, u * 0.2, int(u * 0.2), acc)
+		ci.draw_set_transform(c0, 0.0, Vector2(_mx(), 1))
+		ci.draw_string(font_d, Vector2(-u * 0.1, u * 0.08), str(p.c.num), HORIZONTAL_ALIGNMENT_CENTER, u * 0.2, int(u * 0.2), acc)
+		ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	dot(ci, (tf(hip - nx * 0.13 + Vector2(0, 0.02)) + tf(hip + nx * 0.14 + Vector2(0, 0.02))) / 2.0, 0.13 * u, tc.sh)
 	# front leg, head, front arm
 	_leg(ci, s.lg1, false, hip, tc, skin, dskin, acc, olw)
@@ -608,6 +614,8 @@ func _process(delta: float) -> void:
 	if g.shake > 0.3:
 		sh = Vector2(randf_range(-g.shake, g.shake), randf_range(-g.shake, g.shake) * 0.6)
 	var tfm := Transform2D(g.tilt, Vector2(g.zoom, g.zoom), 0.0, f0 + sh) * Transform2D(0.0, -f0)
+	if mirror:
+		tfm = Transform2D(Vector2(-1, 0), Vector2(0, 1), Vector2(W, 0)) * tfm
 	transform = tfm
 	queue_redraw()
 	add_layer.queue_redraw()
@@ -714,7 +722,9 @@ func draw_player(p) -> void:
 	var name: String = p.c.name.split(" ")[0]
 	var col := Color("ffcf3c") if g.is_human(p) else Color(0.96, 0.96, 0.94, 0.75)
 	var fs := int(maxf(12.0, K * 0.26))
-	draw_string(font_b, Vector2(X(p.x) - 60, Y(0) + K * 0.1 + fs), name, HORIZONTAL_ALIGNMENT_CENTER, 120, fs, col)
+	draw_set_transform(Vector2(X(p.x), Y(0) + K * 0.1 + fs), 0.0, Vector2(_mx(), 1))
+	draw_string(font_b, Vector2(-60, 0), name, HORIZONTAL_ALIGNMENT_CENTER, 120, fs, col)
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	if g.is_human(p):
 		var hy := Y(p.y + g.REACH + 0.45) - 4 + sin(g.gt * 6) * 2
 		var cx := X(p.x)
@@ -750,7 +760,9 @@ func draw_markers() -> void:
 		ring(self, cc, K * 0.5 * pr, K * 0.16 * pr, Color(col, 0.3), 7.0)
 		ring(self, cc, K * 0.5 * pr, K * 0.16 * pr, Color(col, 0.95), 2.5)
 		if out:
-			draw_string(font_d, cc + Vector2(-60, K * 0.6), "DEHORS", HORIZONTAL_ALIGNMENT_CENTER, 120, int(maxf(12, K * 0.3)), col)
+			draw_set_transform(cc + Vector2(0, K * 0.6), 0.0, Vector2(_mx(), 1))
+			draw_string(font_d, Vector2(-60, 0), "DEHORS", HORIZONTAL_ALIGNMENT_CENTER, 120, int(maxf(12, K * 0.3)), col)
+			draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	var pn = b.plan
 	if pn != null and g.is_human(pn.atk) and g.gt < pn.tc + 0.25:
 		CZ = pn.atk.z
@@ -868,7 +880,9 @@ func _draw_top() -> void:
 		var pos := Vector2(clampf(X(p.x), 80, W - 80), clampf(Y(p.y) - a * K * 0.5, 24, H - 24))
 		var fs := int(maxf(14.0, K * 0.6) * p.size * sl)
 		var al := clampf(1.3 - a, 0, 1)
-		ci.draw_set_transform(pos, 0.0, Vector2.ONE)
+		if mirror:
+			pos.x = W - clampf(W - pos.x, 80, W - 80)
+		ci.draw_set_transform(pos, 0.0, Vector2(_mx(), 1))
 		var tw := font_d.get_string_size(p.text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 		ci.draw_string_outline(font_d, Vector2(-tw / 2, fs * 0.35), p.text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 8, Color(0.02, 0.03, 0.04, al))
 		ci.draw_string(font_d, Vector2(-tw / 2 + 3, fs * 0.35 + 3), p.text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(0.93, 0.3, 0.34, 0.9 * al))
@@ -876,7 +890,7 @@ func _draw_top() -> void:
 	ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	# reception timing bar above the human
 	var hp = g.human
-	var r = g.resp.L
+	var r = g.resp[hp.side] if hp != null else null
 	if g.is_human(hp) and r != null and r.p == hp and g.state == "live" and r.mode in ["rec", "bset", "set", "over"]:
 		var pr = g.predict(g.REACH - 0.05 if r.mode == "set" else g.BUMPH)
 		if pr != null and pr.x <= 1.3:

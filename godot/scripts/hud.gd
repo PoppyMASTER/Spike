@@ -14,6 +14,8 @@ var skill_d = null
 var vignette: Texture2D
 var intro_t := 0.0
 var me := "L"                   # the local player's side (online guest = "R")
+var lft := "L"                  # team shown on the left of the screen (guest: mirrored view)
+var rgt := "R"
 var online := false
 var lost := false
 
@@ -34,6 +36,8 @@ func setup(game: Node, c: Dictionary) -> void:
 	opp_name = c.opp.name
 	online = c.get("net", "") != ""
 	me = "R" if c.get("net", "") == "guest" else "L"
+	lft = me
+	rgt = "L" if me == "R" else "R"
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	g.banner.connect(func(side, who, reason): banner_d = {"side": side, "who": who, "reason": reason, "t0": g.gt})
@@ -276,21 +280,21 @@ func _draw_score(s: Vector2) -> void:
 	var w := minf(600.0, s.x * 0.52)
 	var x0 := s.x / 2 - w / 2
 	var y := 14.0
-	txt(side_name("L"), Vector2(x0, y + 14), 16, Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT, Kit.font_c, 4)
-	txt(side_name("R"), Vector2(x0 + w, y + 14), 16, Color.WHITE, HORIZONTAL_ALIGNMENT_RIGHT, Kit.font_c, 4)
+	txt(side_name(lft), Vector2(x0, y + 14), 16, Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT, Kit.font_c, 4)
+	txt(side_name(rgt), Vector2(x0 + w, y + 14), 16, Color.WHITE, HORIZONTAL_ALIGNMENT_RIGHT, Kit.font_c, 4)
 	var bw := w / 2 - 50
 	var tp := float(g.target_pts)
 	draw_rect(Rect2(x0, y + 20, bw, 9), Color(0.02, 0.03, 0.05, 0.75))
 	draw_rect(Rect2(x0 + w - bw, y + 20, bw, 9), Color(0.02, 0.03, 0.05, 0.75))
-	draw_rect(Rect2(x0 + bw * (1.0 - minf(1.0, g.score.L / tp)), y + 20, bw * minf(1.0, g.score.L / tp), 9), Color("ed4c56"))
-	draw_rect(Rect2(x0 + w - bw, y + 20, bw * minf(1.0, g.score.R / tp), 9), Color("58cfe8"))
+	draw_rect(Rect2(x0 + bw * (1.0 - minf(1.0, g.score[lft] / tp)), y + 20, bw * minf(1.0, g.score[lft] / tp), 9), Color("ed4c56") if lft == "L" else Color("58cfe8"))
+	draw_rect(Rect2(x0 + w - bw, y + 20, bw * minf(1.0, g.score[rgt] / tp), 9), Color("58cfe8") if rgt == "R" else Color("ed4c56"))
 	draw_colored_polygon(PackedVector2Array([Vector2(s.x / 2 - 22, y + 10), Vector2(s.x / 2 + 22, y + 10), Vector2(s.x / 2 + 30, y + 25), Vector2(s.x / 2 + 22, y + 40), Vector2(s.x / 2 - 22, y + 40), Vector2(s.x / 2 - 30, y + 25)]), Kit.YELLOW)
 	txt("VS", Vector2(s.x / 2, y + 33), 18, Color("1f1400"))
-	txt(str(g.score.L), Vector2(s.x / 2 - 40, y + 38), 32, Color("ff8a8a"), HORIZONTAL_ALIGNMENT_RIGHT, null, 6)
-	txt(str(g.score.R), Vector2(s.x / 2 + 40, y + 38), 32, Color("9fe6f6"), HORIZONTAL_ALIGNMENT_LEFT, null, 6)
+	txt(str(g.score[lft]), Vector2(s.x / 2 - 40, y + 38), 32, Color("ff8a8a") if lft == "L" else Color("9fe6f6"), HORIZONTAL_ALIGNMENT_RIGHT, null, 6)
+	txt(str(g.score[rgt]), Vector2(s.x / 2 + 40, y + 38), 32, Color("9fe6f6") if rgt == "R" else Color("ff8a8a"), HORIZONTAL_ALIGNMENT_LEFT, null, 6)
 	if g.target_sets > 1:
-		txt("SETS %d · %d" % [g.sets.L, g.sets.R], Vector2(s.x / 2, y + 58), 13, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, Kit.font_c, 3)
-	draw_circle(Vector2(x0 - 12.0 if g.serving == "L" else x0 + w + 12.0, y + 9), 4, Kit.YELLOW)
+		txt("SETS %d · %d" % [g.sets[lft], g.sets[rgt]], Vector2(s.x / 2, y + 58), 13, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, Kit.font_c, 3)
+	draw_circle(Vector2(x0 - 12.0 if g.serving == lft else x0 + w + 12.0, y + 9), 4, Kit.YELLOW)
 	var pr := pause_rect()
 	draw_circle(pr.get_center(), 22, Color(0.05, 0.06, 0.09, 0.6))
 	draw_rect(Rect2(pr.get_center() + Vector2(-8, -9), Vector2(5, 18)), Color.WHITE)
@@ -335,7 +339,7 @@ func _draw_skill_banner(s: Vector2) -> void:
 		return
 	var k: float = g.gt - skill_d.t0
 	var a := 1.0 if k < 1.0 else (1.3 - k) / 0.3
-	var L: bool = skill_d.side == "L"
+	var L: bool = skill_d.side == lft
 	var w := minf(320.0, s.x * 0.3)
 	var x := s.x / 2 - w - 30 if L else s.x / 2 + 30
 	var off := (1.0 - minf(1.0, k / 0.15)) * (-60.0 if L else 60.0)
@@ -436,7 +440,7 @@ func _draw_cutin(s: Vector2) -> void:
 	draw_rect(Rect2(Vector2.ZERO, s), Color(0.01, 0.02, 0.04, 0.6 * a))
 	draw_set_transform(Vector2(s.x / 2, s.y / 2), -0.12, Vector2.ONE)
 	var bh := s.y * 0.46
-	var tc := Color(1, 0.43, 0.35) if p.side == "L" else Color(0.35, 0.81, 0.91)
+	var tc := Color(1, 0.43, 0.35) if p.side == lft else Color(0.35, 0.81, 0.91)
 	draw_polygon(PackedVector2Array([Vector2(-s.x, -bh / 2), Vector2(s.x, -bh / 2), Vector2(s.x, bh / 2), Vector2(-s.x, bh / 2)]),
 		PackedColorArray([Color(tc, 0.95 * a), Color(0.05, 0.06, 0.09, 0.95 * a), Color(0.05, 0.06, 0.09, 0.95 * a), Color(tc, 0.95 * a)]))
 	draw_rect(Rect2(-s.x, -bh / 2 - 5, s.x * 2, 4), Color(1, 0.81, 0.24, a))
@@ -446,16 +450,16 @@ func _draw_cutin(s: Vector2) -> void:
 	var cut := Art.cutout(p.c.id)
 	if cut:
 		var S := minf(s.y * 1.08, s.x * 0.62)
-		var ix := -S + (s.x * 0.04 + S) * ease_k if p.side == "L" else s.x - (s.x * 0.04 + S) * ease_k
+		var ix := -S + (s.x * 0.04 + S) * ease_k if p.side == lft else s.x - (s.x * 0.04 + S) * ease_k
 		draw_texture_rect(cut, Rect2(ix, s.y - S, S, S), false, Color(1, 1, 1, a))
 	else:
 		var S2 := minf(s.y * 0.7, s.x * 0.4)
-		var ix2 := -S2 + (s.x * 0.06 + S2) * ease_k if p.side == "L" else s.x - (s.x * 0.06 + S2) * ease_k
+		var ix2 := -S2 + (s.x * 0.06 + S2) * ease_k if p.side == lft else s.x - (s.x * 0.06 + S2) * ease_k
 		var ct := Art.card(p.c.id)
 		if ct:
 			draw_texture_rect(ct, Rect2(ix2, s.y / 2 - S2 * 0.55, S2, S2), false, Color(1, 1, 1, a))
-	var tx := s.x * 0.95 if p.side == "L" else s.x * 0.05
-	var al := HORIZONTAL_ALIGNMENT_RIGHT if p.side == "L" else HORIZONTAL_ALIGNMENT_LEFT
+	var tx := s.x * 0.95 if p.side == lft else s.x * 0.05
+	var al := HORIZONTAL_ALIGNMENT_RIGHT if p.side == lft else HORIZONTAL_ALIGNMENT_LEFT
 	txt(String(p.c.ultName).to_upper(), Vector2(tx, s.y * 0.5), int(minf(s.x * 0.1, s.y * 0.16)), Color(1, 0.81, 0.24, a), al, null, 12)
 	txt(String(p.c.name).to_upper(), Vector2(tx, s.y * 0.62), int(minf(s.x * 0.045, s.y * 0.07)), Color(0.96, 0.96, 0.94, a), al, null, 8)
 
@@ -469,9 +473,13 @@ func _draw_intro(s: Vector2) -> void:
 	var slide := (1.0 - ease(k, 0.3)) * s.x * 0.5
 	var ovr_l: int = cfg.get("ovr_l", Save.team_ovr())
 	var ovr_r: int = cfg.get("ovr_r", DB.opp_ovr(cfg.opp))
-	txt(side_name("L"), Vector2(s.x * 0.06 - slide, s.y * 0.24), 40, Color(1, 1, 1, a), HORIZONTAL_ALIGNMENT_LEFT, null, 6)
+	if lft == "R":
+		var tmp := ovr_l
+		ovr_l = ovr_r
+		ovr_r = tmp
+	txt(side_name(lft), Vector2(s.x * 0.06 - slide, s.y * 0.24), 40, Color(1, 1, 1, a), HORIZONTAL_ALIGNMENT_LEFT, null, 6)
 	txt("OVR %d" % ovr_l, Vector2(s.x * 0.06 - slide, s.y * 0.3), 16, Color(Kit.YELLOW, a), HORIZONTAL_ALIGNMENT_LEFT, Kit.font_i)
-	txt(side_name("R"), Vector2(s.x * 0.94 + slide, s.y * 0.24), 40, Color(1, 1, 1, a), HORIZONTAL_ALIGNMENT_RIGHT, null, 6)
+	txt(side_name(rgt), Vector2(s.x * 0.94 + slide, s.y * 0.24), 40, Color(1, 1, 1, a), HORIZONTAL_ALIGNMENT_RIGHT, null, 6)
 	txt("OVR %d · %s" % [ovr_r, "EN LIGNE" if online else DB.D.DIFFS[int(cfg.opp.diff)].name], Vector2(s.x * 0.94 + slide, s.y * 0.3), 16, Color(Kit.YELLOW, a), HORIZONTAL_ALIGNMENT_RIGHT, Kit.font_i)
 	var sz_m := minf(s.x * 0.13, s.y * 0.3)
 	for side in ["L", "R"]:
@@ -479,7 +487,7 @@ func _draw_intro(s: Vector2) -> void:
 		for r in ["SPK", "SET", "DEF"]:
 			var p = g.t[side][r]
 			var appear := clampf((intro_t - 0.25 - i * 0.13) / 0.45, 0, 1)
-			var x: float = (s.x * 0.05 + i * sz_m * 0.95) if side == "L" else (s.x * 0.95 - sz_m - i * sz_m * 0.95)
+			var x: float = (s.x * 0.05 + i * sz_m * 0.95) if side == lft else (s.x * 0.95 - sz_m - i * sz_m * 0.95)
 			var y := s.y * 0.38 + (1.0 - appear) * 30
 			var col := Color(1, 1, 1, appear * a)
 			var cut := Art.cutout(p.c.id)
