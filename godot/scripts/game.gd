@@ -150,6 +150,13 @@ var stick_val := 0.0
 
 var sfx: Node = null
 
+# online play: "host" simulates and records events for the guest; "guest" only replays snapshots
+var net := ""
+var human2: Plr = null        # host side: the guest's player (team R)
+var rin := {"keys": {"left": false, "right": false, "jump": false}, "edge": {"jump": false, "act": false, "feint": false}, "stick": 0.0}
+var rec: Array = []
+var lag := 0.0                # guest round-trip estimate (s), widens the guest's touch window
+
 func _ready() -> void:
 	randomize()
 
@@ -211,7 +218,7 @@ func mk_player(side: String, role: String, id: String, own: Dictionary) -> Plr:
 	return p
 
 ## team_l / team_r: {SPK|SET|DEF: {id, own}}; diff: 0..3; fmt: {sets, pts}
-func start_match(team_l: Dictionary, team_r: Dictionary, human_role: String, diff := 2, fmt := {"sets": 1, "pts": 15}) -> void:
+func start_match(team_l: Dictionary, team_r: Dictionary, human_role: String, diff := 2, fmt := {"sets": 1, "pts": 15}, human2_role := "") -> void:
 	t = {"L": {}, "R": {}}
 	for r in ["SPK", "SET", "DEF"]:
 		t.L[r] = mk_player("L", r, team_l[r].id, team_l[r].own)
@@ -227,7 +234,10 @@ func start_match(team_l: Dictionary, team_r: Dictionary, human_role: String, dif
 	human = t.L[human_role] if human_role != "NONE" else null
 	if human:
 		human.human = true
-	spectate = human == null
+	human2 = t.R[human2_role] if human2_role != "" else null
+	if human2:
+		human2.human = true
+	spectate = human == null and human2 == null
 	score = {"L": 0, "R": 0}
 	rot = {"L": 0, "R": 0}
 	serving = "L"
@@ -277,10 +287,14 @@ func sk_tick_point() -> void:
 
 # ---------------------------------------------------------------- feel helpers
 func pop(text: String, x: float, y: float, col := Color(0.96, 0.93, 0.86), size := 1.0) -> void:
+	if net == "host":
+		rec.append(["pop", text, x, y, col, size])
 	pops.append({"text": text, "x": x, "y": y, "t0": gt, "col": col, "size": size})
 func burst(x: float, y: float, n: int, col: Color, spd := 5.0, zz := -1.0) -> void:
 	if zz < 0:
 		zz = ball.z
+	if net == "host":
+		rec.append(["burst", x, y, n, col, spd, zz])
 	for i in n:
 		var a := randf() * TAU
 		var v := randf_range(0.3, 1.0) * spd
@@ -291,11 +305,15 @@ func add_fx(o: Dictionary) -> void:
 	o["t0"] = gt
 	if not o.has("z"):
 		o["z"] = ball.z
+	if net == "host":
+		rec.append(["fx", o.duplicate()])
 	fx.append(o)
 func set_pose(p: Plr, name: String, dur := 0.35) -> void:
 	p.pose = name
 	p.pose_t = gt + dur
 func play(name: String, k := 1.0) -> void:
+	if net == "host":
+		rec.append(["snd", name, k])
 	if sfx:
 		sfx.play(name, k)
 
@@ -334,6 +352,8 @@ func new_point(side: String) -> void:
 	b.kind = "held"; b.plan = null; b.power = 0.0; b.ult = false; b.trail.clear(); b.vx = 0.0; b.vy = 0.0
 	b.x = sv.x + sv.f * 0.35; b.y = 0.8; b.z = 0.45
 	path_pts.clear(); old_paths.clear()
+	if net == "host":
+		rec.append(["reset"])
 	cel = null
 	state = "serve"; state_t = gt; serve_toss_t = null
 	for p in players:
@@ -428,6 +448,8 @@ func next_setter(p: Plr) -> Plr:
 	return tm.SET if p != tm.SET else tm.DEF
 
 func new_path() -> void:
+	if net == "host":
+		rec.append(["np"])
 	if path_pts.size() > 1:
 		old_paths.append({"pts": path_pts.duplicate(), "col": trail_col.duplicate(), "t0": gt})
 	path_pts.clear()
@@ -464,11 +486,19 @@ func gain_ult(p: Plr, q: float) -> void:
 	if p.ult_on and q >= 0.7:
 		p.ult = minf(1.0, p.ult + 0.09 + q * 0.05)
 
-func move_dir() -> float:
-	var kd := (1.0 if keys.right else 0.0) - (1.0 if keys.left else 0.0)
-	return stick_val if stick_val != 0.0 else kd
+func remote(p: Plr) -> bool:
+	return p != null and p == human2 and net == "host"
+func keys_of(p: Plr) -> Dictionary:
+	return rin.keys if remote(p) else keys
+func edge_of(p: Plr) -> Dictionary:
+	return rin.edge if remote(p) else edge
+func move_dir(p: Plr = null) -> float:
+	var k := keys_of(p)
+	var sv: float = rin.stick if remote(p) else stick_val
+	var kd := (1.0 if k.right else 0.0) - (1.0 if k.left else 0.0)
+	return sv if sv != 0.0 else kd
 func input_dir(p: Plr) -> float:
-	return move_dir() * p.f if is_human(p) else 0.0
+	return move_dir(p) * p.f if is_human(p) else 0.0
 
 func do_receive(p: Plr, q: float, overhead: bool) -> void:
 	var b := ball
@@ -751,6 +781,7 @@ func start_dive(p: Plr, dir: float) -> void:
 
 func human_update(p: Plr, dt: float) -> void:
 	var b := ball
+	var edge := edge_of(p)
 	if edge.jump:
 		edge.jump = false
 		if state == "serve" and b.held == p:
@@ -771,12 +802,14 @@ func human_update(p: Plr, dt: float) -> void:
 		if not p.ground:
 			p.act = gt; p.feint_req = true
 		elif state == "live" and b.live and p.dive < gt and p.recover < gt:
-			var md := move_dir()
+			var md := move_dir(p)
 			var dir := (1.0 if md > 0 else -1.0) if absf(md) > 0.3 else (signf(b.x - p.x) if b.x != p.x else p.f)
 			start_dive(p, dir)
 			p.act = gt; p.feint_req = false
 	if gt - p.act < 0.24:
 		var asf := 1.28 if assist else 1.0
+		if remote(p):
+			asf *= 1.0 + clampf(lag, 0.0, 0.4) * 1.2   # the guest sees the ball a little late
 		if state == "serve" and serve_toss_t != null and b.last_player == p and b.held == null:
 			var zn := z_serve(p) if p.ground else z_spike(p)
 			var d := zd(zn)
@@ -837,7 +870,7 @@ func human_update(p: Plr, dt: float) -> void:
 					do_receive(p, q, false)
 					rate(p, q)
 					return
-	var dir := move_dir()
+	var dir := move_dir(p)
 	if state == "serve" and b.held == p:
 		dir = 0.0
 	move_player(p, dir, dt, true)
@@ -857,7 +890,7 @@ func move_player(p: Plr, dir: float, dt: float, is_h: bool) -> void:
 			p.vx += clampf(dir * p.spd * 0.9 - p.vx, -18.0 * dt, 18.0 * dt)
 		p.x += p.vx * dt
 	if not p.ground or p.vy > 0:
-		var boost := 0.5 if (is_h and keys.jump and p.vy > 0 and gt - p.jump_t < 0.42) else 1.0
+		var boost := 0.5 if (is_h and keys_of(p).jump and p.vy > 0 and gt - p.jump_t < 0.42) else 1.0
 		if boost < 1.0:
 			p.boosting = gt
 		p.vy -= GP * float_g(p.vy) * boost * dt
@@ -1199,6 +1232,8 @@ func step(dt: float) -> void:
 		if state == "live" or state == "serve":
 			if is_human(human):
 				human_update(human, h)
+			if is_human(human2):
+				human_update(human2, h)
 			ai_team("L", h)
 			ai_team("R", h)
 			ball_step(h)
@@ -1255,7 +1290,11 @@ func _feel(dt: float) -> void:
 				p.ghosts.append({"x": p.x, "y": p.y, "f": p.dd if p.pose == "dive" else p.f, "pz": p.pz.duplicate(), "t": gt})
 				if p.ghosts.size() > 6:
 					p.ghosts.pop_front()
-	# ball depth follows whoever will play it
+	# ball depth follows whoever will play it (guest: comes in the snapshot)
+	if net == "guest":
+		_trails(b)
+		_camera(dt, b)
+		return
 	var tz := 0.5
 	if b.held != null:
 		tz = b.held.z
@@ -1267,6 +1306,10 @@ func _feel(dt: float) -> void:
 		if r != null:
 			tz = r.p.z
 	b.z += (tz - b.z) * minf(1.0, dt * 3.2)
+	_trails(b)
+	_camera(dt, b)
+
+func _trails(b: Ball) -> void:
 	var sp := Vector2(b.vx, b.vy).length()
 	b.trail.append(Vector3(b.x, b.y, b.z))
 	var keep := 12 if (b.live and (sp > 14 or trail_hot)) else 8
@@ -1276,9 +1319,164 @@ func _feel(dt: float) -> void:
 		path_pts.append(Vector3(b.x, b.y, b.z))
 		if path_pts.size() > 240:
 			path_pts.pop_front()
-	# camera
+
+func _camera(dt: float, b: Ball) -> void:
 	var lim := maxf(0.0, (12.2 if state == "serve" else 10.4) - 17.0 / 2.0)
-	var focus := sgn(serving) * 6.5 if state == "serve" else b.x * 0.6 + (human.x * 0.25 if is_human(human) else 0.0)
+	var focus := sgn(serving) * 6.5 if state == "serve" else b.x * 0.6 + (human.x * 0.25 if (human and not spectate) else 0.0)
 	cam_x += (clampf(focus, -lim, lim) - cam_x) * minf(1.0, dt * 3.2)
 	var hi_y := maxf(0.0, b.y - 6.0) * 0.85
 	cam_y += (hi_y - cam_y) * minf(1.0, dt * 3.0)
+
+# ---------------------------------------------------------------- online snapshots
+# Host: snapshot() 30 times a second (state + the effects/sounds recorded since the last one).
+# Guest: apply_snap() then guest_step() between snapshots (dead reckoning, local effects).
+const PF := 14   # floats per player in a snapshot
+
+func pidx(p) -> int:
+	return players.find(p) if p != null else -1
+
+func snapshot() -> Dictionary:
+	var pf := PackedFloat32Array()
+	var poses := PackedStringArray()
+	for p in players:
+		pf.append_array([p.x, p.y, p.vx, p.vy, 1.0 if p.ground else 0.0, p.pose_t - gt, p.dd, p.dive - gt,
+			p.recover - gt, p.ult, p.z, p.boosting - gt, p.jump_t - gt, p.act - gt])
+		poses.append(p.pose)
+	var b := ball
+	var pl = null
+	if b.plan != null:
+		pl = [pidx(b.plan.atk), b.plan.side, b.plan.tc - gt, b.plan.cx, b.plan.cy]
+	var rs := {}
+	for s in ["L", "R"]:
+		rs[s] = [pidx(resp[s].p), resp[s].mode] if resp[s] != null else null
+	var d := {"t": "s", "gt": gt, "st": state, "stt": state_t - gt, "sv": serving, "sc": score, "sets": sets,
+		"rot": rot, "tos": (serve_toss_t - gt) if serve_toss_t != null else null, "cel": cel,
+		"ro": [readout.txt, readout.t0 - gt] if readout != null else null, "rs": rs,
+		"sk": sk, "eq": eq, "ovt": [over_t.L - gt, over_t.R - gt],
+		"pf": pf, "po": poses,
+		"b": PackedFloat32Array([b.x, b.y, b.z, b.vx, b.vy, b.spin, 1.0 if b.live else 0.0, pidx(b.held), b.hit_t - gt]),
+		"bk": b.kind, "pl": pl,
+		"fe": PackedFloat32Array([shake, flash, zoom, dim, tilt, hitstop, slow - gt]),
+		"fc": flash_col, "tc": trail_col, "th": trail_hot, "ps": paused, "ov": over, "slog": set_log,
+		"ev": rec}
+	if over:
+		d["stats"] = players.map(func(p): return p.stat)
+	rec = []
+	return d
+
+var _snap_gt := 0.0
+func apply_snap(d: Dictionary) -> void:
+	gt = float(d.gt)
+	_snap_gt = gt
+	state = d.st; state_t = gt + float(d.stt); serving = d.sv
+	score = d.sc; sets = d.sets; rot = d.rot; set_log = d.slog
+	serve_toss_t = (gt + float(d.tos)) if d.tos != null else null
+	cel = d.cel
+	readout = {"txt": d.ro[0], "t0": gt + float(d.ro[1])} if d.ro != null else null
+	for s in ["L", "R"]:
+		var r = d.rs[s]
+		resp[s] = {"p": players[r[0]], "mode": r[1]} if (r != null and r[0] >= 0) else null
+	sk = d.sk
+	var my_eq: Dictionary = eq.R.duplicate()
+	eq = d.eq
+	eq.R = my_eq   # the guest's own picks win (sent to the host separately)
+	over_t = {"L": gt + float(d.ovt[0]), "R": gt + float(d.ovt[1])}
+	var pf: PackedFloat32Array = d.pf
+	for i in players.size():
+		var p: Plr = players[i]
+		var o := i * PF
+		p.x = pf[o]; p.y = pf[o + 1]; p.vx = pf[o + 2]; p.vy = pf[o + 3]; p.ground = pf[o + 4] > 0.5
+		p.pose_t = gt + pf[o + 5]; p.dd = pf[o + 6]; p.dive = gt + pf[o + 7]; p.recover = gt + pf[o + 8]
+		p.ult = pf[o + 9]; p.z = pf[o + 10]; p.boosting = gt + pf[o + 11]; p.jump_t = gt + pf[o + 12]; p.act = gt + pf[o + 13]
+		p.pose = d.po[i]
+	var bf: PackedFloat32Array = d.b
+	var b := ball
+	b.x = bf[0]; b.y = bf[1]; b.z = bf[2]; b.vx = bf[3]; b.vy = bf[4]; b.spin = bf[5]; b.live = bf[6] > 0.5
+	b.held = players[int(bf[7])] if bf[7] >= 0 else null
+	b.hit_t = gt + bf[8]
+	b.kind = d.bk
+	if d.pl != null and int(d.pl[0]) >= 0:
+		b.plan = {"atk": players[int(d.pl[0])], "side": d.pl[1], "tc": gt + float(d.pl[2]), "cx": float(d.pl[3]), "cy": float(d.pl[4])}
+	else:
+		b.plan = null
+	var fe: PackedFloat32Array = d.fe
+	shake = fe[0]; flash = fe[1]; zoom = fe[2]; dim = fe[3]; tilt = fe[4]; hitstop = fe[5]; slow = gt + fe[6]
+	flash_col = d.fc; trail_col = d.tc; trail_hot = d.th
+	paused = d.ps
+	if d.has("stats"):
+		for i in players.size():
+			players[i].stat = d.stats[i]
+	for e in d.ev:
+		_replay(e)
+	if d.ov and not over:
+		over = true
+
+func _replay(e: Array) -> void:
+	match e[0]:
+		"pop": pops.append({"text": e[1], "x": e[2], "y": e[3], "t0": gt, "col": e[4], "size": e[5]})
+		"burst":
+			var keep := net
+			net = ""
+			burst(e[1], e[2], e[3], e[4], e[5], e[6])
+			net = keep
+		"fx":
+			var o: Dictionary = e[1]
+			o["t0"] = gt
+			fx.append(o)
+		"snd":
+			if sfx:
+				sfx.play(e[1], e[2])
+		"np":
+			if path_pts.size() > 1:
+				old_paths.append({"pts": path_pts.duplicate(), "col": trail_col.duplicate(), "t0": gt})
+			path_pts.clear()
+		"reset":
+			path_pts.clear(); old_paths.clear(); ball.trail.clear()
+		"ban": banner.emit(e[1], e[2], e[3])
+		"cut":
+			cutin_data = players[e[1]]
+			cutin_t0 = Time.get_ticks_msec() / 1000.0
+			cutin.emit(cutin_data)
+		"skf": skill_fired.emit(e[1], e[2])
+		"setw": set_won.emit(e[1])
+		"sc": score_changed.emit()
+		"over":
+			over = true
+			match_over.emit(e[1])
+
+func guest_step(dt: float) -> void:
+	if over:
+		_feel(dt)
+		return
+	var rate := 0.0 if hitstop > 0 else (0.42 if slow > gt else 1.0)
+	if paused:
+		rate = 0.0
+	if hitstop > 0:
+		hitstop -= dt
+	var h := dt * rate
+	if gt + h > _snap_gt + 0.25:      # never run more than 1/4 s ahead of the last snapshot
+		h = maxf(0.0, _snap_gt + 0.25 - gt)
+	gt += h
+	var b := ball
+	if b.held == null:
+		b.vy -= G * h; b.x += b.vx * h; b.y += b.vy * h
+		if b.y < BR:
+			b.y = BR
+	else:
+		b.x = b.held.x + b.held.f * 0.35
+	for p in players:
+		p.x += p.vx * h
+		if not p.ground:
+			p.vy -= GP * float_g(p.vy) * h
+			p.y = maxf(0.0, p.y + p.vy * h)
+		if p.pose_t < gt and p.pose != "idle":
+			p.pose = "idle" if p.ground else "jump"
+	_feel(dt)
+
+func record_signals() -> void:
+	banner.connect(func(s, w, r): rec.append(["ban", s, w, r]))
+	cutin.connect(func(p): rec.append(["cut", pidx(p)]))
+	skill_fired.connect(func(s, n): rec.append(["skf", s, n]))
+	set_won.connect(func(s): rec.append(["setw", s]))
+	score_changed.connect(func(): rec.append(["sc"]))
+	match_over.connect(func(w): rec.append(["over", w]))

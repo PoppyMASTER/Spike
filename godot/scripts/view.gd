@@ -83,6 +83,13 @@ func _resize() -> void:
 	var viewW := 17.0 if W / H > 1.9 else 15.5
 	K = W / viewW
 	FLOOR = H * 0.86
+	# squarer screens (tablets, foldables): zoom in so the court fills the height instead of
+	# leaving a huge empty sky, and lift the floor a little
+	var a := W / H
+	if a < 1.65:
+		var t := clampf((1.65 - a) / 0.5, 0.0, 1.0)
+		K = maxf(K, H / lerpf(8.6, 9.8, t))
+		FLOOR = H * lerpf(0.86, 0.79, t)
 	_build_arena()
 
 # ---------------------------------------------------------------- projection
@@ -709,7 +716,7 @@ func draw_player(p) -> void:
 	if g.is_human(p):
 		var hy := Y(p.y + g.REACH + 0.45) - 4 + sin(g.gt * 6) * 2
 		var cx := X(p.x)
-		var r = g.resp.L
+		var r = g.resp[p.side]
 		var mine: bool = r != null and r.p == p and g.state == "live"
 		draw_colored_polygon(PackedVector2Array([Vector2(cx - 7, hy - 9), Vector2(cx + 7, hy - 9), Vector2(cx, hy)]), Color("ffcf3c") if mine else Color("f5f4f0"))
 

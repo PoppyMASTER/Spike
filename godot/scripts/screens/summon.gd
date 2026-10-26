@@ -13,6 +13,7 @@ func build() -> void:
 	var left := Kit.vbox(12)
 	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	left.size_flags_stretch_ratio = 1.1
+	left.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row.add_child(left)
 	var ban := Kit.hbox(14)
 	var txt := Kit.vbox(4)
@@ -61,12 +62,12 @@ func build() -> void:
 		var pn := Kit.panel(rv, Color(1, 1, 1, 0.06))
 		pn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		rates.add_child(pn)
-	left.add_child(Kit.spacer())
 	left.add_child(Kit.label("TAUX D'APPARITION", 13, Kit.MUTED, Kit.font_c))
 	left.add_child(rates)
 	# last results
 	var right := Kit.vbox(10)
 	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	right.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row.add_child(right)
 	right.add_child(Kit.title("Dernier tirage"))
 	var grid := GridContainer.new()
@@ -79,10 +80,18 @@ func build() -> void:
 			continue
 		var cell := Kit.vbox(2)
 		var t := Kit.tex_rect(Art.card(r.id), Vector2(96, 96))
+		t.set_meta("cell", true)
 		cell.add_child(t)
 		cell.add_child(Kit.label(r.tag, 12, Kit.YELLOW if r.tag == "NOUVEAU" else Kit.FG, Kit.font_c))
 		grid.add_child(cell)
 	right.add_child(Kit.label("%d invocations au total" % int(Save.S.pulls), 13, Kit.MUTED))
+	# last-pull cells grow with the column (bigger on tablets)
+	var fit := func():
+		var w := clampf(floorf((right.size.x - 4 * 8) / 5.0), 70.0, 170.0)
+		for cell in grid.get_children():
+			cell.get_child(0).custom_minimum_size = Vector2(w, w)
+	right.resized.connect(fit)
+	fit.call_deferred()
 
 func refresh() -> void:
 	build()

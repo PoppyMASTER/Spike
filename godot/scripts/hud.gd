@@ -13,6 +13,9 @@ var banner_d = null
 var skill_d = null
 var vignette: Texture2D
 var intro_t := 0.0
+var me := "L"                   # the local player's side (online guest = "R")
+var online := false
+var lost := false
 
 # touch state
 var stick_id := -1
@@ -29,6 +32,8 @@ func setup(game: Node, c: Dictionary) -> void:
 	g = game
 	cfg = c
 	opp_name = c.opp.name
+	online = c.get("net", "") != ""
+	me = "R" if c.get("net", "") == "guest" else "L"
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	g.banner.connect(func(side, who, reason): banner_d = {"side": side, "who": who, "reason": reason, "t0": g.gt})
@@ -36,8 +41,8 @@ func setup(game: Node, c: Dictionary) -> void:
 	g.match_over.connect(func(w):
 		winner = w
 		screen = "over"
-		Sfx.play("crowd", 1.4 if w == "L" else 0.4))
-	g.eq.L = {"atk": Save.S.settings.eq_atk, "def": Save.S.settings.eq_def}
+		Sfx.play("crowd", 1.4 if w == me else 0.4))
+	g.eq[me] = {"atk": Save.S.settings.eq_atk, "def": Save.S.settings.eq_def}
 	vignette = _make_vignette()
 	Input.use_accumulated_input = false
 	g.paused = true
@@ -114,14 +119,15 @@ func _touch_down(idx: int, pos: Vector2) -> void:
 			return
 		"over":
 			if _over_rect().has_point(pos):
-				quit.emit({"won": winner == "L", "score": g.score.duplicate(), "sets": g.sets.duplicate(), "tour": cfg.tour})
+				quit.emit({"won": winner == me, "online": online, "score": g.score.duplicate(), "sets": g.sets.duplicate(), "tour": cfg.tour})
 			return
 		"pause":
 			_pause_tap(pos)
 			return
 	if pause_rect().grow(8).has_point(pos):
 		screen = "pause"
-		g.paused = true
+		if not online:
+			g.paused = true
 		return
 	if not g.spectate:
 		for i in 3:
@@ -144,7 +150,9 @@ func _touch_down(idx: int, pos: Vector2) -> void:
 
 func _equip(id: String) -> void:
 	var cat: String = g.sk_cat(id)
-	g.eq.L[cat] = id
+	g.eq[me][cat] = id
+	if cfg.get("net", "") == "guest":
+		Net.send({"t": "eq", "eq": g.eq[me]})
 	Save.S.settings["eq_" + cat] = id
 	Save.save()
 	Sfx.ui()
@@ -190,7 +198,8 @@ func _key(ev: InputEventKey) -> void:
 		return
 	if ev.keycode == KEY_ESCAPE and ev.pressed and screen == "play":
 		screen = "pause"
-		g.paused = true
+		if not online:
+			g.paused = true
 		return
 	if map.has(ev.keycode):
 		_set_key(map[ev.keycode], ev.pressed)
@@ -204,20 +213,21 @@ func _pause_tap(pos: Vector2) -> void:
 	var it := _pause_items()
 	if it[0].has_point(pos):
 		screen = "play"
-		g.paused = false
+		if not online:
+			g.paused = false
 	elif it[1].has_point(pos):
 		g.assist = not g.assist
 		Save.S.settings.assist = g.assist
 		Save.save()
 	elif it[2].has_point(pos):
-		if g.human:
+		if g.human and not online:
 			g.spectate = not g.spectate
 	elif it[3].has_point(pos):
 		Save.S.settings.mus = not Save.S.settings.mus
 		Save.save()
 		Sfx.apply()
 	elif it[4].has_point(pos):
-		quit.emit({"won": false, "score": g.score.duplicate(), "sets": g.sets.duplicate(), "tour": cfg.tour, "abandon": true})
+		quit.emit({"won": false, "online": online, "score": g.score.duplicate(), "sets": g.sets.duplicate(), "tour": cfg.tour, "abandon": true})
 func _over_rect() -> Rect2:
 	var s := sz()
 	return Rect2(s.x / 2 - 170, s.y * 0.8, 340, 66)
@@ -261,8 +271,8 @@ func _draw_score(s: Vector2) -> void:
 	var w := minf(600.0, s.x * 0.52)
 	var x0 := s.x / 2 - w / 2
 	var y := 14.0
-	txt("TON ÉQUIPE", Vector2(x0, y + 14), 16, Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT, Kit.font_c, 4)
-	txt(opp_name.to_upper(), Vector2(x0 + w, y + 14), 16, Color.WHITE, HORIZONTAL_ALIGNMENT_RIGHT, Kit.font_c, 4)
+	txt(side_name("L"), Vector2(x0, y + 14), 16, Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT, Kit.font_c, 4)
+	txt(side_name("R"), Vector2(x0 + w, y + 14), 16, Color.WHITE, HORIZONTAL_ALIGNMENT_RIGHT, Kit.font_c, 4)
 	var bw := w / 2 - 50
 	var tp := float(g.target_pts)
 	draw_rect(Rect2(x0, y + 20, bw, 9), Color(0.02, 0.03, 0.05, 0.75))
@@ -297,7 +307,7 @@ func _draw_readout(s: Vector2) -> void:
 		txt(ro.txt, Vector2(s.x / 2, y + fs + 2), fs, Color(0.35, 0.81, 0.91, a))
 	elif g.state == "serve" and g.gt - g.state_t < 1.3 and screen == "play":
 		var sv = g.server(g.serving)
-		txt("SERVICE %s · %s" % ["POUR TOI" if g.serving == "L" else "ADVERSE", sv.c.name.split(" ")[0].to_upper()], Vector2(s.x / 2, y + 28), 26, Color(0.96, 0.96, 0.94, 0.9), HORIZONTAL_ALIGNMENT_CENTER, null, 6)
+		txt("SERVICE %s · %s" % ["POUR TOI" if g.serving == me else "ADVERSE", sv.c.name.split(" ")[0].to_upper()], Vector2(s.x / 2, y + 28), 26, Color(0.96, 0.96, 0.94, 0.9), HORIZONTAL_ALIGNMENT_CENTER, null, 6)
 
 func _draw_banner(s: Vector2) -> void:
 	if banner_d == null:
@@ -307,7 +317,7 @@ func _draw_banner(s: Vector2) -> void:
 		return
 	var a := k / 0.15 if k < 0.15 else ((2.2 - k) / 0.4 if k > 1.8 else 1.0)
 	var sl := (1.0 - minf(1.0, k / 0.18)) * 40.0
-	var t1 := ("TON ÉQUIPE" if banner_d.side == "L" else opp_name.to_upper()) + (" · " + String(banner_d.who).to_upper() if banner_d.who != "" else "")
+	var t1 := side_name(banner_d.side) + (" · " + String(banner_d.who).to_upper() if banner_d.who != "" else "")
 	var w := maxf(Kit.font_c.get_string_size(t1, HORIZONTAL_ALIGNMENT_LEFT, -1, 18).x, Kit.font_c.get_string_size(banner_d.reason, HORIZONTAL_ALIGNMENT_LEFT, -1, 20).x) + 44
 	var r := Rect2(16 + sl, s.y * 0.6, w, 52)
 	draw_colored_polygon(PackedVector2Array([r.position, Vector2(r.end.x, r.position.y), Vector2(r.end.x - 14, r.end.y), Vector2(r.position.x, r.end.y)]), Color(0.02, 0.03, 0.05, 0.72 * a))
@@ -325,7 +335,7 @@ func _draw_skill_banner(s: Vector2) -> void:
 	var x := s.x / 2 - w - 30 if L else s.x / 2 + 30
 	var off := (1.0 - minf(1.0, k / 0.15)) * (-60.0 if L else 60.0)
 	slant_rect(Rect2(x + off, s.y * 0.2, w, 36), Color(0.93, 0.3, 0.34, 0.9 * a) if L else Color(0.16, 0.55, 0.7, 0.9 * a), 12.0)
-	txt(("" if L else "ADVERSAIRE · ") + String(skill_d.name).to_upper(), Vector2(x + off + w / 2, s.y * 0.2 + 26), 20, Color(1, 1, 1, a))
+	txt(("" if skill_d.side == me else "ADVERSAIRE · ") + String(skill_d.name).to_upper(), Vector2(x + off + w / 2, s.y * 0.2 + 26), 20, Color(1, 1, 1, a))
 
 func _draw_skills(s: Vector2) -> void:
 	if g.spectate:
@@ -336,8 +346,8 @@ func _draw_skills(s: Vector2) -> void:
 		for i in 3:
 			var id: String = ids[i]
 			var p := skill_pos(side_left, i)
-			var eqd: bool = g.eq.L[g.sk_cat(id)] == id
-			var cd: int = g.sk.L[id]
+			var eqd: bool = g.eq[me][g.sk_cat(id)] == id
+			var cd: int = g.sk[me][id]
 			var ready := eqd and cd == 0
 			draw_circle(p, r, Color(0.05, 0.06, 0.09, 0.55 if eqd else 0.3))
 			draw_arc(p, r, 0, TAU, 32, Kit.YELLOW if ready else Color(1, 1, 1, 0.75 if eqd else 0.3), 3.0 if ready else 2.0, true)
@@ -401,10 +411,10 @@ func _draw_controls(s: Vector2) -> void:
 			txt(l[1], c + Vector2(0, fs * 0.9), fs, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, Kit.font_d, 3)
 	var tip := ""
 	var p = g.human
-	if g.state == "serve" and g.serving == "L" and g.server("L") == p:
+	if g.state == "serve" and g.serving == me and g.server(me) == p:
 		tip = "RÉCEPTION quand il redescend · ou SAUT puis SMASH" if g.serve_toss_t != null else "SAUT ou RÉCEPTION pour lancer le ballon"
-	elif g.state == "live" and g.resp.L != null and g.resp.L.p == p:
-		var m: String = g.resp.L.mode
+	elif g.state == "live" and g.resp[me] != null and g.resp[me].p == p:
+		var m: String = g.resp[me].mode
 		tip = "Mets-toi sur le cercle et RÉCEPTION · trop loin : PLONGEON" if m == "rec" else ("Passe ! RÉCEPTION sous le ballon" if m in ["set", "bset"] else ("Smash ! SAUT puis appuie encore en l'air" if m == "atk" else "Renvoie-le : RÉCEPTION"))
 	if tip != "":
 		txt(tip, Vector2(s.x / 2, s.y - 14), 18, Color(1, 1, 1, 0.92), HORIZONTAL_ALIGNMENT_CENTER, Kit.font_c, 4)
@@ -452,12 +462,12 @@ func _draw_intro(s: Vector2) -> void:
 	draw_colored_polygon(PackedVector2Array([Vector2(s.x * 0.53, 0), Vector2(s.x, 0), Vector2(s.x, s.y), Vector2(s.x * 0.47, s.y)]), Color(0.04, 0.16, 0.35, 0.93 * a))
 	draw_line(Vector2(s.x * 0.53, 0), Vector2(s.x * 0.47, s.y), Color(Kit.YELLOW, a), 8.0)
 	var slide := (1.0 - ease(k, 0.3)) * s.x * 0.5
-	var ovr_l := Save.team_ovr()
-	var ovr_r := DB.opp_ovr(cfg.opp)
-	txt("TON ÉQUIPE", Vector2(s.x * 0.06 - slide, s.y * 0.24), 40, Color(1, 1, 1, a), HORIZONTAL_ALIGNMENT_LEFT, null, 6)
+	var ovr_l: int = cfg.get("ovr_l", Save.team_ovr())
+	var ovr_r: int = cfg.get("ovr_r", DB.opp_ovr(cfg.opp))
+	txt(side_name("L"), Vector2(s.x * 0.06 - slide, s.y * 0.24), 40, Color(1, 1, 1, a), HORIZONTAL_ALIGNMENT_LEFT, null, 6)
 	txt("OVR %d" % ovr_l, Vector2(s.x * 0.06 - slide, s.y * 0.3), 16, Color(Kit.YELLOW, a), HORIZONTAL_ALIGNMENT_LEFT, Kit.font_i)
-	txt(opp_name.to_upper(), Vector2(s.x * 0.94 + slide, s.y * 0.24), 40, Color(1, 1, 1, a), HORIZONTAL_ALIGNMENT_RIGHT, null, 6)
-	txt("OVR %d · %s" % [ovr_r, DB.D.DIFFS[int(cfg.opp.diff)].name], Vector2(s.x * 0.94 + slide, s.y * 0.3), 16, Color(Kit.YELLOW, a), HORIZONTAL_ALIGNMENT_RIGHT, Kit.font_i)
+	txt(side_name("R"), Vector2(s.x * 0.94 + slide, s.y * 0.24), 40, Color(1, 1, 1, a), HORIZONTAL_ALIGNMENT_RIGHT, null, 6)
+	txt("OVR %d · %s" % [ovr_r, "EN LIGNE" if online else DB.D.DIFFS[int(cfg.opp.diff)].name], Vector2(s.x * 0.94 + slide, s.y * 0.3), 16, Color(Kit.YELLOW, a), HORIZONTAL_ALIGNMENT_RIGHT, Kit.font_i)
 	var sz_m := minf(s.x * 0.13, s.y * 0.3)
 	for side in ["L", "R"]:
 		var i := 0
@@ -497,8 +507,11 @@ func _draw_pause(s: Vector2) -> void:
 
 func _draw_over(s: Vector2) -> void:
 	draw_rect(Rect2(Vector2.ZERO, s), Color(0.01, 0.05, 0.12, 0.86))
-	var won := winner == "L"
-	txt("VICTOIRE !" if won else "DÉFAITE", Vector2(s.x / 2, s.y * 0.18), 70, Kit.YELLOW if won else Kit.MUTED, HORIZONTAL_ALIGNMENT_CENTER, null, 10)
+	var won := winner == me
+	if lost:
+		txt("CONNEXION PERDUE", Vector2(s.x / 2, s.y * 0.18), 56, Kit.MUTED, HORIZONTAL_ALIGNMENT_CENTER, null, 10)
+	else:
+		txt("VICTOIRE !" if won else "DÉFAITE", Vector2(s.x / 2, s.y * 0.18), 70, Kit.YELLOW if won else Kit.MUTED, HORIZONTAL_ALIGNMENT_CENTER, null, 10)
 	var sc := "%d – %d" % [g.score.L, g.score.R]
 	if g.target_sets > 1:
 		sc = "Sets %d – %d   (%s)" % [g.sets.L, g.sets.R, ", ".join(g.set_log)]
@@ -522,3 +535,11 @@ func _draw_over(s: Vector2) -> void:
 	var r := _over_rect()
 	slant_rect(r, Kit.YELLOW, 12.0)
 	txt("CONTINUER", r.get_center() + Vector2(0, 12), 32, Color("1a1300"))
+
+func side_name(side: String) -> String:
+	return "TON ÉQUIPE" if side == me else opp_name.to_upper()
+func connection_lost() -> void:
+	lost = true
+	if screen != "over":
+		winner = ""
+		screen = "over"

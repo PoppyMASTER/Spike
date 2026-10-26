@@ -15,7 +15,7 @@ dest_files=["res://.godot/imported/mira.png-a0796b86a5adba96b91102c011f7da7c.cte
 
 [params]
 
-compress/mode=0
+compress/mode=1
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0

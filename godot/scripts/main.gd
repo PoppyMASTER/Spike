@@ -16,7 +16,7 @@ func _ready() -> void:
 		_bot()
 		return
 	if "--check" in args:
-		for f in ["app", "art", "db", "game", "hud", "kit", "match", "save", "sfx", "summon_fx", "view", "screens/team", "screens/roster", "screens/summon", "screens/setup"]:
+		for f in ["app", "art", "db", "game", "hud", "kit", "match", "save", "sfx", "summon_fx", "view", "screens/team", "screens/roster", "screens/summon", "screens/setup", "net", "updater"]:
 			var s = load("res://scripts/%s.gd" % f)
 			print(f, " ok" if s and s.can_instantiate() else " FAILED")
 		get_tree().quit()
@@ -32,6 +32,8 @@ func _ready() -> void:
 		_bench()
 	elif "--ui" in args:
 		_ui_shots(args[args.find("--ui") + 1])
+	elif "--online" in args:
+		_online_test(args[args.find("--online") + 1], args[args.find("--online") + 2])
 
 # ---------------------------------------------------------------- test helpers
 func _cfg(role := "NONE", diff := 2) -> Dictionary:
@@ -152,3 +154,52 @@ func _bench() -> void:
 func _process(_d: float) -> void:
 	if bench_on:
 		bench_frames += 1
+
+# two instances through a relay: --online host DIR / --online join DIR (add --broker ws://...)
+func _online_test(who: String, dir: String) -> void:
+	DirAccess.make_dir_recursive_absolute(dir)
+	await get_tree().create_timer(1.0).timeout
+	var S = load("res://scripts/screens/setup.gd")
+	S.mode = "online"
+	app.show_screen("match")
+	await get_tree().create_timer(0.3).timeout
+	if who == "host":
+		S.lobby = "hosting"
+		Net.host()
+		await Net.connected
+		app.screen.build()
+		await get_tree().create_timer(0.3).timeout
+		await RenderingServer.frame_post_draw
+		get_viewport().get_texture().get_image().save_png(dir + "/lobby_host.png")
+		var f := FileAccess.open(dir + "/code.txt", FileAccess.WRITE)
+		f.store_string(Net.room_code())
+		f.close()
+	else:
+		while not FileAccess.file_exists(dir + "/code.txt"):
+			await get_tree().create_timer(0.2).timeout
+		await get_tree().create_timer(0.3).timeout
+		S.lobby = "joining"
+		print("join ok ", Net.join(FileAccess.get_file_as_string(dir + "/code.txt")))
+	while app.match_node == null:
+		await get_tree().create_timer(0.1).timeout
+	var m = app.match_node
+	print(who, " match started, net=", m.net)
+	var t0 := Time.get_ticks_msec()
+	var shot := 0
+	while Time.get_ticks_msec() - t0 < 26000:
+		await get_tree().create_timer(0.05).timeout
+		if m.hud.screen == "intro" and Time.get_ticks_msec() - t0 > 1500:
+			m.hud._end_intro()
+		var g = m.game
+		# crude player: move toward the ball, press buttons now and then
+		if g.human:
+			g.stick_val = clampf((g.ball.x - g.human.x) * 0.8, -1, 1)
+			if randf() < 0.12:
+				g.edge["act" if randf() < 0.6 else "jump"] = true
+		var el := Time.get_ticks_msec() - t0
+		if shot < 3 and el > 6000 + shot * 6000:
+			await RenderingServer.frame_post_draw
+			get_viewport().get_texture().get_image().save_png("%s/%s_%d.png" % [dir, who, shot])
+			shot += 1
+	print(who, " score ", m.game.score, " state ", m.game.state, " gt %.1f" % m.game.gt, " lag ", m.game.lag, " rtt ", m._rtt)
+	get_tree().quit()

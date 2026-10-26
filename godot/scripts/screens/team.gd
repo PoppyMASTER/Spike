@@ -45,7 +45,15 @@ func build() -> void:
 	slots.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	right.add_child(slots)
 	for r in ["SPK", "SET", "DEF"]:
-		slots.add_child(_slot(r))
+		# keep each card at a card-like ratio whatever the screen shape (phone, tablet)
+		var arc := AspectRatioContainer.new()
+		arc.ratio = 0.7
+		arc.stretch_mode = AspectRatioContainer.STRETCH_FIT
+		arc.alignment_vertical = AspectRatioContainer.ALIGNMENT_CENTER
+		arc.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		arc.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		arc.add_child(_slot(r))
+		slots.add_child(arc)
 
 func refresh() -> void:
 	build()
@@ -70,10 +78,15 @@ func _slot(r: String) -> Control:
 	v.offset_bottom = -12
 	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	b.add_child(v)
-	var art := Kit.tex_rect(Art.card(id), Vector2(0, 150))
-	art.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	var sq := AspectRatioContainer.new()
+	sq.ratio = 1.0
+	sq.alignment_vertical = AspectRatioContainer.ALIGNMENT_BEGIN
+	sq.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	sq.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.add_child(sq)
+	var art := Kit.tex_rect(Art.card(id), Vector2(0, 80))
 	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	v.add_child(art)
+	sq.add_child(art)
 	var tag := Kit.role_tag(r, 13)
 	tag.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	art.add_child(tag)

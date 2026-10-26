@@ -19,7 +19,7 @@ class PCard:
 	var sel := false
 	var t0 := 0.0
 	func _ready() -> void:
-		custom_minimum_size = Vector2(150, 212)
+		custom_minimum_size = Vector2(110, 174)
 		mouse_filter = Control.MOUSE_FILTER_STOP
 	func _draw() -> void:
 		var s := size
@@ -175,14 +175,18 @@ func build() -> void:
 		i += 1
 	if list.is_empty():
 		v.add_child(Kit.label("Aucun perso ici — invoque pour recruter à ce poste.", 16, Kit.MUTED))
-	scroll.resized.connect(_cols)
+	if not resized.is_connected(_cols):
+		resized.connect(_cols)
 	_cols.call_deferred()
 
 func _cols() -> void:
 	if grid and scroll:
-		grid.columns = maxi(2, int((scroll.size.x - 14) / 162))
+		# width of this screen (fixed by the app layout), never the scroll's own size: sizing the
+		# cards from the scroll made the grid push the scroll wider and spill off the screen
+		var avail := size.x - 18.0
+		grid.columns = clampi(int(avail / 150.0), 2, 9)
+		var w := floorf((avail - (grid.columns - 1) * 12) / grid.columns)
 		for card in grid.get_children():
-			var w := (scroll.size.x - 14 - (grid.columns - 1) * 12) / grid.columns
 			card.custom_minimum_size = Vector2(w, w + 64)
 
 func refresh() -> void:

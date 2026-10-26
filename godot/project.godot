@@ -18,6 +18,7 @@ Save="*res://scripts/save.gd"
 Sfx="*res://scripts/sfx.gd"
 Kit="*res://scripts/kit.gd"
 Art="*res://scripts/art.gd"
+Net="*res://scripts/net.gd"
 
 [display]
 

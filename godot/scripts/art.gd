@@ -2,12 +2,11 @@ extends Node
 ## Character portraits (autoload "Art").
 ## - card(id): square card art = rank backdrop + illustration (if any) or a drawn anime bust
 ## - cutout(id): the transparent illustration alone (versus screen, ultimate cut-ins), or null
-## Illustrations ship in res://art and are refreshed from the GitHub repo (art/portraits/<id>.png)
-## at start-up, cached in user://art for offline play.
+## Illustrations ship in res://art (512 px, lossy WebP on import); new ones arrive with the
+## automatic update pack, so nothing is downloaded at start-up.
 
 signal updated
 
-const RAW := "https://raw.githubusercontent.com/PoppyMASTER/Spike/main/art/portraits/"
 const TILE := 256
 const OUTL := Color(0.03, 0.04, 0.06)
 const RKBG := {"C": ["4a5360", "262c35"], "B": ["2f8a52", "13301f"], "A": ["2f6fd6", "122046"], "S": ["8f4fe0", "2a1248"], "S+": ["ff9a3c", "5a1a3a"]}
@@ -22,7 +21,7 @@ var _ids: Array = []
 
 func _ready() -> void:
 	font_d = load("res://fonts/Anton-Regular.ttf")
-	DirAccess.make_dir_recursive_absolute("user://art")
+	_clear_old_cache()
 	for c in DB.ROSTER:
 		_ids.append(c.id)
 		var tex := _load_illus(c.id)
@@ -32,7 +31,6 @@ func _ready() -> void:
 	await _render_cards()
 	ready_ = true
 	updated.emit()
-	_refresh_from_github()
 
 func card(id: String) -> Texture2D:
 	return cards.get(id, null)
@@ -40,15 +38,19 @@ func cutout(id: String) -> Texture2D:
 	return cuts.get(id, null)
 
 func _load_illus(id: String) -> Texture2D:
-	var up := "user://art/%s.png" % id
-	if FileAccess.file_exists(up):
-		var img := Image.load_from_file(up)
-		if img and not img.is_empty():
-			return ImageTexture.create_from_image(img)
 	var rp := "res://art/%s.png" % id
 	if ResourceLoader.exists(rp):
 		return load(rp)
 	return null
+
+# portraits used to be downloaded into user://art (v0.2/0.3): free that space
+func _clear_old_cache() -> void:
+	var d := DirAccess.open("user://art")
+	if d == null:
+		return
+	for f in d.get_files():
+		d.remove(f)
+	DirAccess.remove_absolute("user://art")
 
 func _soft() -> Texture2D:
 	var gt := GradientTexture2D.new()
@@ -60,43 +62,6 @@ func _soft() -> Texture2D:
 	gr.set_color(1, Color(1, 1, 1, 0))
 	gt.gradient = gr
 	return gt
-
-# ---------------------------------------------------------------- GitHub refresh
-func _refresh_from_github() -> void:
-	var changed := false
-	for id in _ids:
-		var req := HTTPRequest.new()
-		req.timeout = 12.0
-		add_child(req)
-		if req.request(RAW + id + ".png") != OK:
-			req.queue_free()
-			continue
-		var r = await req.request_completed
-		req.queue_free()
-		var code: int = r[1]
-		var body: PackedByteArray = r[3]
-		var up := "user://art/%s.png" % id
-		if code == 200 and body.size() > 0:
-			var old := FileAccess.get_file_as_bytes(up) if FileAccess.file_exists(up) else PackedByteArray()
-			if old != body:
-				var img := Image.new()
-				if img.load_png_from_buffer(body) == OK:
-					var f := FileAccess.open(up, FileAccess.WRITE)
-					f.store_buffer(body)
-					f.close()
-					cuts[id] = ImageTexture.create_from_image(img)
-					changed = true
-		elif code == 404 and FileAccess.file_exists(up):
-			DirAccess.remove_absolute(up)
-			var t := _load_illus(id)
-			if t:
-				cuts[id] = t
-			else:
-				cuts.erase(id)
-			changed = true
-	if changed:
-		await _render_cards()
-		updated.emit()
 
 # ---------------------------------------------------------------- card atlas (one GPU pass for all 26)
 func _render_cards() -> void:
