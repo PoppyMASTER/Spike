@@ -16,7 +16,7 @@ func _ready() -> void:
 		_bot()
 		return
 	if "--check" in args:
-		for f in ["app", "art", "db", "game", "hud", "kit", "match", "save", "sfx", "summon_fx", "view", "screens/team", "screens/roster", "screens/summon", "screens/setup", "net", "updater"]:
+		for f in ["app", "art", "db", "game", "hud", "kit", "match", "save", "sfx", "summon_fx", "view", "screens/team", "screens/roster", "screens/summon", "screens/setup", "net", "updater", "social", "screens/social"]:
 			var s = load("res://scripts/%s.gd" % f)
 			print(f, " ok" if s and s.can_instantiate() else " FAILED")
 		get_tree().quit()
@@ -32,6 +32,12 @@ func _ready() -> void:
 		_bench()
 	elif "--ui" in args:
 		_ui_shots(args[args.find("--ui") + 1])
+	elif "--socui" in args:
+		_soc_ui(args[args.find("--socui") + 1])
+	elif "--ranked" in args:
+		_ranked_test(args[args.find("--ranked") + 1], args[args.find("--ranked") + 2])
+	elif "--socwait" in args:
+		_soc_wait(args[args.find("--socwait") + 1])
 	elif "--fold" in args:
 		_fold_test(args[args.find("--fold") + 1])
 	elif "--opt" in args:
@@ -262,4 +268,97 @@ func _fold_test(dir: String) -> void:
 		await get_tree().create_timer(2.5).timeout
 		await RenderingServer.frame_post_draw
 		get_viewport().get_texture().get_image().save_png("%s/fold_match_%d.png" % [dir, i])
+	get_tree().quit()
+
+# ---- social tests (local server: --social http://127.0.0.1:8787 --social-store user://socA.json)
+func _snap(path: String) -> void:
+	await RenderingServer.frame_post_draw
+	get_viewport().get_texture().get_image().save_png(path)
+
+func _soc_ui(dir: String) -> void:
+	DirAccess.make_dir_recursive_absolute(dir)
+	await get_tree().create_timer(1.5).timeout
+	var S = load("res://scripts/screens/social.gd")
+	for s in ["profile", "friends", "messages", "chat", "club", "ranks", "feed"]:
+		S.section = s
+		S.dm_with = {}
+		app.show_screen("social")
+		await get_tree().create_timer(1.6).timeout
+		await _snap("%s/soc_%s.png" % [dir, s])
+	S.section = "messages"
+	S.dm_with = {"id": 2, "name": "Nassim", "tag": 0, "avatar": "solene", "color": "#4fc3ff"}
+	app.show_screen("social")
+	await get_tree().create_timer(1.6).timeout
+	await _snap(dir + "/soc_dm.png")
+	app.screen.open_profile(2)
+	await get_tree().create_timer(1.2).timeout
+	await _snap(dir + "/soc_profile_other.png")
+	for c in Kit.overlay.get_children():
+		c.queue_free()
+	# invite Nassim to a match
+	S.invite_friend(app, {"id": 2, "name": "Nassim", "tag": 0})
+	await get_tree().create_timer(2.5).timeout
+	await _snap(dir + "/invite_host.png")
+	var t0 := Time.get_ticks_msec()
+	while app.match_node == null and Time.get_ticks_msec() - t0 < 30000:
+		await get_tree().create_timer(0.2).timeout
+	print("A match started: ", app.match_node != null)
+	if app.match_node:
+		await get_tree().create_timer(2.0).timeout
+		await _snap(dir + "/match_A.png")
+	get_tree().quit()
+
+func _find_button(n: Node, txt: String) -> Button:
+	if n is Button and n.text == txt:
+		return n
+	for c in n.get_children():
+		var b := _find_button(c, txt)
+		if b:
+			return b
+	return null
+
+func _soc_wait(dir: String) -> void:
+	DirAccess.make_dir_recursive_absolute(dir)
+	var t0 := Time.get_ticks_msec()
+	var b: Button = null
+	while b == null and Time.get_ticks_msec() - t0 < 60000:
+		await get_tree().create_timer(0.3).timeout
+		b = _find_button(Kit.overlay, "REJOINDRE")
+	print("B invite popup: ", b != null)
+	if b == null:
+		get_tree().quit()
+		return
+	await get_tree().create_timer(0.6).timeout
+	await _snap(dir + "/invite_popup_B.png")
+	b.pressed.emit()
+	while app.match_node == null and Time.get_ticks_msec() - t0 < 60000:
+		await get_tree().create_timer(0.2).timeout
+	print("B match started: ", app.match_node != null)
+	if app.match_node:
+		await get_tree().create_timer(2.0).timeout
+		await _snap(dir + "/match_B.png")
+	get_tree().quit()
+
+func _ranked_test(who: String, dir: String) -> void:
+	DirAccess.make_dir_recursive_absolute(dir)
+	await get_tree().create_timer(1.5).timeout
+	var S = load("res://scripts/screens/setup.gd")
+	S.mode = "online"
+	app.show_screen("match")
+	await get_tree().create_timer(0.3).timeout
+	app.screen._ranked_start()
+	await get_tree().create_timer(1.5).timeout
+	await _snap("%s/queue_%s.png" % [dir, who])
+	var t0 := Time.get_ticks_msec()
+	while app.match_node == null and Time.get_ticks_msec() - t0 < 40000:
+		await get_tree().create_timer(0.2).timeout
+	print(who, " ranked match started: ", app.match_node != null, " ranked=", S.ranked)
+	if app.match_node == null:
+		get_tree().quit()
+		return
+	await get_tree().create_timer(4.0).timeout
+	var m = app.match_node
+	m.hud.quit.emit({"won": who == "host", "online": true, "score": {"L": 15, "R": 9}, "sets": {}, "tour": false})
+	await get_tree().create_timer(3.0).timeout
+	await _snap("%s/after_%s.png" % [dir, who])
 	get_tree().quit()

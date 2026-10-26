@@ -128,7 +128,15 @@ func refresh() -> void:
 	build()
 
 func _pull(n: int) -> void:
+	var before: int = Save.S.owned.size()
 	var res := Save.pull(n)
+	for r in res:
+		if DB.BY_ID[r.id].rank == "S+" and r.tag == "NOUVEAU":
+			Social.post_event("splus", {"id": r.id, "name": DB.BY_ID[r.id].name})
+	var after: int = Save.S.owned.size()
+	if after / 5 > before / 5:
+		Social.post_event("codex", {"n": after - after % 5})
+	Social.sync_profile()
 	var fx := Control.new()
 	fx.set_script(load("res://scripts/summon_fx.gd"))
 	Kit.overlay.add_child(fx)

@@ -1,0 +1,12 @@
+name = "skyspike-social"
+main = "src/index.js"
+compatibility_date = "2026-06-01"
+workers_dev = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "skyspike-social"
+database_id = "6ce22086-4833-4adb-aef9-7418248eb5ec"
+
+[triggers]
+crons = ["17 * * * *"]

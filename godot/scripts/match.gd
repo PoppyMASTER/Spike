@@ -71,6 +71,10 @@ func begin(c: Dictionary) -> void:
 			return
 		_done = true
 		res["opp"] = c.opp
+		res["lost"] = hud.lost
+		res["role"] = net
+		res["ranked"] = c.get("ranked")
+		res["opp_sid"] = c.get("opp_sid", 0)
 		if net != "":
 			Net.send({"t": "bye"})
 			Net.close()

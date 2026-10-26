@@ -2,8 +2,8 @@ extends Control
 ## Main menu shell: header, current screen, bottom navigation. Starts and ends matches.
 
 const SCREENS := {"team": "res://scripts/screens/team.gd", "gacha": "res://scripts/screens/summon.gd",
-	"roster": "res://scripts/screens/roster.gd", "match": "res://scripts/screens/setup.gd"}
-const TABS := [["team", "Équipe"], ["gacha", "Invoquer"], ["roster", "Persos"], ["match", "Jouer"]]
+	"roster": "res://scripts/screens/roster.gd", "match": "res://scripts/screens/setup.gd", "social": "res://scripts/screens/social.gd"}
+const TABS := [["team", "Équipe"], ["gacha", "Invoquer"], ["roster", "Persos"], ["match", "Jouer"], ["social", "Social"]]
 
 var bg: Control
 var content: Control
@@ -70,7 +70,7 @@ func _ready() -> void:
 	navp.add_child(nav)
 	for t in TABS:
 		var b := Kit.button(t[1], "ghost", 20)
-		b.custom_minimum_size = Vector2(190, 46)
+		b.custom_minimum_size = Vector2(170, 46)
 		b.pressed.connect(show_screen.bind(t[0]))
 		b.set_meta("id", t[0])
 		nav.add_child(b)
@@ -83,6 +83,8 @@ func _ready() -> void:
 	Art.updated.connect(func(): if screen and screen.has_method("refresh"): screen.refresh())
 	show_screen("team")
 	Sfx.music("menu")
+	Social.hub_changed.connect(_nav_badge)
+	Social.invited.connect(_on_invite)
 	Updater.update_ready.connect(func(_b): Kit.toast("Mise à jour téléchargée : relance l'appli pour l'installer"))
 	if Updater.ready_build > 0:
 		Kit.toast("Mise à jour téléchargée : relance l'appli pour l'installer")
@@ -101,6 +103,7 @@ func _draw_bg() -> void:
 
 func show_screen(id: String) -> void:
 	cur = id
+	_nav_badge.call_deferred()
 	for b in nav.get_children():
 		var on: bool = b.get_meta("id") == id
 		var col := Kit.YELLOW if on else Color(1, 1, 1, 0.0)
@@ -120,6 +123,7 @@ func show_screen(id: String) -> void:
 # ---------------------------------------------------------------- matches
 func start_match(cfg: Dictionary) -> void:
 	visible = false
+	Social.status = "match"
 	match_node = Node.new()
 	match_node.set_script(load("res://scripts/match.gd"))
 	get_parent().add_child(match_node)
@@ -131,6 +135,7 @@ func _match_done(result: Dictionary) -> void:
 	match_node.queue_free()
 	match_node = null
 	visible = true
+	Social.status = "menu"
 	Sfx.music("menu")
 	show_screen("match")
 	if screen.has_method("after_match"):
@@ -221,3 +226,49 @@ func _fill_options(v: VBoxContainer) -> void:
 	info.tree_exiting.connect(func():
 		if Updater.status_changed.is_connected(upd):
 			Updater.status_changed.disconnect(upd))
+
+# ---------------------------------------------------------------- social glue
+func _nav_badge() -> void:
+	for b in nav.get_children():
+		if b.get_meta("id") == "social":
+			var n := Social.badge()
+			b.text = "SOCIAL" + ("  (%d)" % n if n > 0 else "")
+
+## a friend invites us: popup anywhere in the menus (ignored during a match: it expires after 2 min)
+func _on_invite(inv: Dictionary) -> void:
+	if match_node != null:
+		return
+	Sfx.play("chord")
+	var v := Kit.sheet(600)
+	var h := Kit.hbox(14)
+	var av: String = String(inv.from.avatar) if DB.BY_ID.has(String(inv.from.avatar)) else "vex"
+	h.add_child(Kit.tex_rect(Art.card(av), Vector2(80, 80)))
+	var tv := Kit.vbox(2)
+	tv.add_child(Kit.label(Social.tagname(inv.from), 26, Color(String(inv.from.color)), Kit.font_d))
+	tv.add_child(Kit.label("t'invite à un match en ligne !", 18, Kit.FG, Kit.font_c))
+	h.add_child(tv)
+	v.add_child(h)
+	var row := Kit.hbox(10)
+	var yes := Kit.button("Rejoindre", "cta", 22)
+	yes.custom_minimum_size.y = 56
+	yes.pressed.connect(func():
+		Kit.close_sheet(v)
+		Social.req("POST", "/v1/invite/answer", {"id": int(inv.id), "accept": true})
+		var S = load("res://scripts/screens/setup.gd")
+		if S.lobby != "":
+			Net.close()
+		S.mode = "online"
+		S.ranked = {}
+		S.lobby = "joining"
+		S.status = "Connexion à la partie de %s…" % Social.tagname(inv.from)
+		if not Net.join(String(inv.code)):
+			S.lobby = ""
+			Kit.toast("Invitation invalide")
+		show_screen("match"))
+	row.add_child(yes)
+	var no := Kit.button("Plus tard", "ghost", 16)
+	no.pressed.connect(func():
+		Kit.close_sheet(v)
+		Social.req("POST", "/v1/invite/answer", {"id": int(inv.id), "accept": false}))
+	row.add_child(no)
+	v.add_child(row)

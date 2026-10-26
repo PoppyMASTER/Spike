@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - 'godot/**'
+      - 'server/**'
       - 'app/debug.keystore'
       - '.github/workflows/godot-apk.yml'
   workflow_dispatch:
@@ -20,6 +21,8 @@ jobs:
   apk:
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    env:
+      HAS_CF: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
 
     steps:
       - name: Recuperer le projet
@@ -85,6 +88,25 @@ jobs:
           SETTINGS
           sed -i 's/^ *//' ~/.config/godot/editor_settings-${minor}.tres
           cat ~/.config/godot/editor_settings-${minor}.tres
+
+      - name: Deployer le serveur social (Cloudflare)
+        if: env.HAS_CF == 'true'
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          cd server
+          npm ci --no-audit --no-fund
+          # tables are created only if missing: safe on every build
+          npx wrangler d1 execute skyspike-social --remote --file schema.sql -y
+          npx wrangler deploy 2>&1 | tee deploy.log
+          url=$(grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' deploy.log | head -1)
+          test -n "$url"
+          echo "{\"url\": \"$url\"}" > ../godot/data/server.json
+          cat ../godot/data/server.json
+          curl -fsS "$url/v1"
 
       - name: Exporter l'APK
         shell: bash

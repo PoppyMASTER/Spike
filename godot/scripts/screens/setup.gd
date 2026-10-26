@@ -7,8 +7,12 @@ static var diff := 1
 static var fmt := 0
 static var stage := "rnd"
 static var opp_cache := {}
-static var lobby := ""          # online: "" | "hosting" | "joining"
+static var lobby := ""          # online: "" | "hosting" | "joining" | "queue" | "ranked_code"
 static var status := ""
+static var invite_to: Dictionary = {}   # friend to invite once our room is open
+static var ranked: Dictionary = {}      # ranked match from the matchmaking server {id, role, code, opponent}
+var _q_t := 0.0
+var _q_t0 := 0.0
 var _join_t := 0.0
 
 const STAGES := [["rnd", "Au hasard"], ["arena", "Arène de nuit"], ["beach", "Plage au couchant"], ["gym", "Gymnase"], ["forest", "Forêt de nuit"]]
@@ -244,8 +248,10 @@ func after_match(r: Dictionary) -> void:
 	if r.get("online", false):
 		lobby = ""
 		status = ""
+		ranked = {}
+		invite_to = {}
 		build()
-		Kit.toast("Match en ligne terminé · " + ("victoire !" if r.won else "défaite"))
+		_online_result(r)
 		return
 	if r.won:
 		Save.S.wins = int(Save.S.wins) + 1
@@ -259,6 +265,7 @@ func after_match(r: Dictionary) -> void:
 			if int(t.round) >= 2:
 				Save.S.trophies[T.k] = int(Save.S.trophies[T.k]) + 1
 				msg = "%s remportée !" % T.name
+				Social.post_event("cup", {"cup": T.name})
 				Save.S.tour = null
 			else:
 				t.round = int(t.round) + 1
@@ -269,11 +276,55 @@ func after_match(r: Dictionary) -> void:
 	else:
 		opp_cache[diff] = DB.gen_opp(diff)
 	Save.save()
+	Social.sync_profile()
 	build()
 	if msg != "":
 		Kit.toast(msg)
 
 # ---------------------------------------------------------------- online (play with a friend)
+func _online_result(r: Dictionary) -> void:
+	var msg := "Match en ligne terminé · " + ("victoire !" if r.won else "défaite")
+	if r.get("lost", false):
+		Kit.toast("Match interrompu : connexion perdue")
+		return
+	if Social.has_account():
+		if r.get("ranked") != null:
+			var me_host: bool = r.get("role", "") == "host"
+			var winner := ("host" if r.won else "guest") if me_host else ("guest" if r.won else "host")
+			var sc: Dictionary = r.get("score", {})
+			var d := await Social.req("POST", "/v1/match/result", {"id": int(r.ranked), "winner": winner,
+				"score": "%d-%d" % [int(sc.get("L", 0)), int(sc.get("R", 0))]})
+			if d.has("delta"):
+				msg += " · Elo %+d" % int(d.delta)
+			var m := await Social.req("GET", "/v1/me")
+			if m.has("me"):
+				Social.me = m.me
+				if is_inside_tree() and mode == "online":
+					build()
+		else:
+			Social.req("POST", "/v1/match/result", {"won": bool(r.won)})
+		Social.sync_profile()
+	Kit.toast(msg)
+	var sid := int(r.get("opp_sid", 0))
+	if sid > 0 and Social.has_account() and sid != int(Social.me.get("id", 0)):
+		var u := await Social.req("GET", "/v1/user?id=%d" % sid)
+		if u.has("user") and u.relation in ["none", "received"]:
+			var v := Kit.sheet(560)
+			v.add_child(Kit.title("Bien joué !"))
+			v.add_child(Kit.label("Ajouter %s en ami pour rejouer facilement ?" % Social.tagname(u.user), 17, Kit.FG))
+			var hb := Kit.hbox(10)
+			var add := Kit.button("Ajouter en ami", "primary", 18)
+			add.pressed.connect(func():
+				Kit.close_sheet(v)
+				var a := await Social.req("POST", "/v1/friends/add", {"id": sid})
+				if not a.has("error"):
+					Kit.toast("Vous êtes amis !" if a.status == "friend" else "Demande envoyée"))
+			hb.add_child(add)
+			var no := Kit.button("Plus tard", "ghost", 16)
+			no.pressed.connect(func(): Kit.close_sheet(v))
+			hb.add_child(no)
+			v.add_child(hb)
+
 func _ready() -> void:
 	Net.connected.connect(_net_up)
 	Net.failed.connect(_net_failed)
@@ -284,6 +335,11 @@ func _online(left: VBoxContainer, right: VBoxContainer) -> void:
 	intro.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	left.add_child(intro)
 	var nm := Kit.hbox(10)
+	if Social.has_account():
+		nm.add_child(Kit.label("TU JOUES EN TANT QUE  " + Social.tagname(Social.me), 15, Kit.YELLOW, Kit.font_c))
+		left.add_child(nm)
+		nm = Kit.hbox(10)
+		nm.visible = false
 	nm.add_child(Kit.label("TON PSEUDO", 13, Kit.MUTED, Kit.font_c))
 	var name_in := LineEdit.new()
 	name_in.text = String(Save.S.settings.get("name", "Joueur"))
@@ -295,15 +351,24 @@ func _online(left: VBoxContainer, right: VBoxContainer) -> void:
 		Save.save())
 	nm.add_child(name_in)
 	left.add_child(nm)
-	if lobby == "hosting":
+	if lobby == "hosting" and not ranked.is_empty():
+		left.add_child(Kit.panel(Kit.label("CLASSÉ · " + status, 18, Color.WHITE, Kit.font_c), Color("6a2fb0")))
+	elif lobby == "hosting":
 		var p := Kit.vbox(6)
 		p.add_child(Kit.label("CODE DE LA PARTIE", 14, Kit.YELLOW, Kit.font_c))
 		p.add_child(Kit.label(Net.room_code() if Net.up else "…", 64, Color.WHITE, Kit.font_d))
 		p.add_child(Kit.label(status, 15, Kit.FG))
 		left.add_child(Kit.panel(p, Color("1e4fae")))
-	elif lobby == "joining":
-		left.add_child(Kit.panel(Kit.label(status, 18, Color.WHITE, Kit.font_c)))
+	elif lobby in ["joining", "queue", "ranked_code"]:
+		var sl := Kit.label(status, 18, Color.WHITE, Kit.font_c)
+		sl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		left.add_child(Kit.panel(sl, Color("6a2fb0") if lobby != "joining" else Color(Kit.DEEP, 0.9)))
 	else:
+		var rk := Kit.button("Partie classée", "cta", 26)
+		rk.custom_minimum_size.y = 68
+		rk.pressed.connect(_ranked_start)
+		left.add_child(rk)
+		left.add_child(Kit.label(("Ton Elo : %d · %s" % [int(Social.me.get("elo", 1000)), String(Social.me.get("tier", ""))]) if Social.has_account() else "Le classé demande un profil : onglet Social.", 13, Kit.MUTED))
 		var hostb := Kit.button("Créer une partie", "primary", 24)
 		hostb.custom_minimum_size.y = 64
 		hostb.pressed.connect(func():
@@ -343,23 +408,122 @@ func _online(left: VBoxContainer, right: VBoxContainer) -> void:
 	left.add_child(note)
 	_options(right)
 	right.add_child(Kit.label("Format et terrain : c'est le créateur de la partie qui choisit.", 13, Kit.MUTED))
+	if lobby == "hosting" and ranked.is_empty() and Social.has_account():
+		_friends_to_invite(right)
 
 func _cancel() -> void:
+	if lobby in ["queue", "ranked_code"] or not ranked.is_empty():
+		Social.req("POST", "/v1/queue/leave", {})
+		Social.status = "menu"
 	if lobby != "":
 		Net.close()
 	lobby = ""
 	status = ""
+	ranked = {}
+	invite_to = {}
+
+## online friends get an "Inviter" button while our room is open
+func _friends_to_invite(right: VBoxContainer) -> void:
+	right.add_child(Kit.label("INVITER UN AMI EN LIGNE", 13, Kit.MUTED, Kit.font_c))
+	var box := Kit.vbox(6)
+	right.add_child(box)
+	var d := await Social.req("GET", "/v1/friends")
+	if d.has("error") or not is_instance_valid(box):
+		return
+	var on: Array = d.friends.filter(func(u): return u.online)
+	if on.is_empty():
+		box.add_child(Kit.label("Aucun ami en ligne pour l'instant.", 13, Kit.MUTED))
+	for u in on:
+		var h := Kit.hbox(8)
+		h.add_child(Kit.tex_rect(Art.card(String(u.avatar) if DB.BY_ID.has(String(u.avatar)) else "vex"), Vector2(40, 40)))
+		var l := Kit.label(Social.tagname(u), 16, Color(String(u.color)), Kit.font_c)
+		l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		h.add_child(l)
+		var b := Kit.button("Inviter", "primary", 14)
+		var uu: Dictionary = u
+		b.pressed.connect(func():
+			b.disabled = true
+			_send_invite(uu))
+		h.add_child(b)
+		box.add_child(h)
+
+func _send_invite(u: Dictionary) -> void:
+	if not Net.up:
+		invite_to = u
+		return
+	var d := await Social.req("POST", "/v1/invite", {"to": int(u.id), "code": Net.room_code()})
+	Kit.toast(String(d.error) if d.has("error") else "Invitation envoyée à " + Social.tagname(u))
+
+# ---------------------------------------------------------------- ranked matchmaking
+func _ranked_start() -> void:
+	if not Social.has_account():
+		Kit.toast("Crée d'abord ton profil dans l'onglet Social")
+		app.show_screen("social")
+		return
+	lobby = "queue"
+	status = "Recherche d'un adversaire…"
+	_q_t0 = Time.get_ticks_msec() / 1000.0
+	_q_t = 0.0
+	Social.status = "queue"
+	build()
+	var d := await Social.req("POST", "/v1/queue/join", {})
+	_queue_state(d)
+
+func _queue_state(d: Dictionary) -> void:
+	if lobby not in ["queue", "ranked_code"]:
+		return
+	if d.has("error"):
+		Kit.toast(String(d.error))
+		_cancel()
+		build()
+		return
+	if d.get("state", "") != "matched":
+		status = "Recherche d'un adversaire… %d s\nÀ niveau égal d'abord, puis la recherche s'élargit." % int(Time.get_ticks_msec() / 1000.0 - _q_t0)
+		if is_inside_tree():
+			build()
+		return
+	var m: Dictionary = d.match
+	if ranked.is_empty():
+		ranked = m
+		Sfx.play("whistle")
+	if m.role == "host":
+		if lobby == "queue":
+			lobby = "hosting"
+			status = "Adversaire trouvé : %s (%s %d) · ouverture de la partie…" % [Social.tagname(m.opponent), m.opponent.tier, int(m.opponent.elo)]
+			Net.host()
+			build()
+	else:
+		if m.get("code") != null and String(m.code) != "":
+			lobby = "joining"
+			status = "Adversaire trouvé : %s · connexion…" % Social.tagname(m.opponent)
+			if not Net.join(String(m.code)):
+				Kit.toast("Code de match invalide")
+				_cancel()
+			build()
+		else:
+			lobby = "ranked_code"
+			status = "Adversaire trouvé : %s (%s %d) · il ouvre la partie…" % [Social.tagname(m.opponent), m.opponent.tier, int(m.opponent.elo)]
+			if is_inside_tree():
+				build()
 
 func _me() -> Dictionary:
 	var tm := {}
 	for r in ["SPK", "SET", "DEF"]:
 		var id: String = Save.S.team[r]
 		tm[r] = {"id": id, "own": Save.S.owned[id]}
-	return {"team": tm, "name": String(Save.S.settings.get("name", "Joueur")), "ovr": Save.team_ovr(),
+	var nm := String(Save.S.settings.get("name", "Joueur"))
+	if Social.has_account():
+		nm = String(Social.me.get("name", nm))
+	return {"team": tm, "name": nm, "ovr": Save.team_ovr(), "sid": int(Social.me.get("id", 0)) if Social.has_account() else 0,
 		"role": Save.S.settings.role if Save.S.settings.role != "NONE" else "SPK",
 		"eq": {"atk": Save.S.settings.eq_atk, "def": Save.S.settings.eq_def}}
 
 func _process(dt: float) -> void:
+	if lobby in ["queue", "ranked_code"]:
+		_q_t -= dt
+		if _q_t <= 0:
+			_q_t = 2.0
+			_poll_queue()
 	# the guest repeats its "join" until the host answers
 	if lobby == "joining" and Net.up:
 		_join_t -= dt
@@ -369,8 +533,25 @@ func _process(dt: float) -> void:
 			d["t"] = "join"
 			Net.send(d)
 
+var _q_busy := false
+func _poll_queue() -> void:
+	if _q_busy:
+		return
+	_q_busy = true
+	var d := await Social.req("POST", "/v1/queue/poll", {})
+	_q_busy = false
+	_queue_state(d)
+
 func _net_up() -> void:
-	if lobby == "hosting":
+	if lobby == "hosting" and not ranked.is_empty():
+		Social.req("POST", "/v1/match/code", {"id": int(ranked.id), "code": Net.room_code()})
+		status = "Partie ouverte · %s se connecte…" % Social.tagname(ranked.opponent)
+	elif lobby == "hosting" and not invite_to.is_empty():
+		var u := invite_to
+		invite_to = {}
+		status = "Invitation envoyée à %s · en attente…" % Social.tagname(u)
+		_send_invite(u)
+	elif lobby == "hosting":
 		status = "En attente de ton pote… donne-lui ce code."
 	elif lobby == "joining":
 		status = "Connecté · on attend la réponse de l'hôte…"
@@ -397,15 +578,21 @@ func _net_msg(d: Dictionary) -> void:
 				st = ["arena", "beach", "gym", "forest"].pick_random()
 			var me := _me()
 			var f: Dictionary = DB.D.FORMATS[fmt]
-			var start := {"t": "start", "team": me.team, "name": me.name, "ovr": me.ovr, "fmt": f, "stage": st}
+			var rid = ranked.get("id") if not ranked.is_empty() else null
+			if rid != null:
+				f = DB.D.FORMATS[0]    # ranked: always 1 set of 15
+			var start := {"t": "start", "team": me.team, "name": me.name, "ovr": me.ovr, "fmt": f, "stage": st, "sid": me.sid, "ranked": rid}
 			Net.send(start)
+			Social.status = "match"
 			app.start_match({"net": "host", "start_msg": start, "opp": {"name": String(d.name), "team": d.team, "diff": 2}, "tour": false,
 				"fmt": f, "stage": st, "role": me.role, "guest_role": String(d.role), "guest_eq": d.eq,
-				"ovr_l": me.ovr, "ovr_r": int(d.ovr)})
+				"ovr_l": me.ovr, "ovr_r": int(d.ovr), "ranked": rid, "opp_sid": int(d.get("sid", 0))})
 		"start":
 			if lobby != "joining":
 				return
 			lobby = ""
 			var me := _me()
+			Social.status = "match"
 			app.start_match({"net": "guest", "opp": {"name": String(d.name), "team": d.team, "diff": 2}, "tour": false,
-				"fmt": d.fmt, "stage": String(d.stage), "role": me.role, "ovr_l": int(d.ovr), "ovr_r": me.ovr})
+				"fmt": d.fmt, "stage": String(d.stage), "role": me.role, "ovr_l": int(d.ovr), "ovr_r": me.ovr,
+				"ranked": d.get("ranked"), "opp_sid": int(d.get("sid", 0))})
