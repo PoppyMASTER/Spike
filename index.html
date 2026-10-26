@@ -1,4 +1,4 @@
-<!--SKYSPIKE-GAME v11-->
+<!--SKYSPIKE-GAME v12-->
 <title>SkySpike</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -252,6 +252,31 @@ body.in-match{overflow:hidden;overscroll-behavior:none}
   .banner h2{font-size:24px}
 }
 
+
+/* versus intro before kick-off */
+.vsx{position:absolute;inset:0;z-index:30;overflow:hidden;background:linear-gradient(105deg,rgba(120,20,30,.92) 0 49.6%,rgba(10,40,90,.92) 50.4% 100%);display:grid;grid-template-columns:1fr auto 1fr;align-items:center;touch-action:manipulation}
+.vsx::after{content:'';position:absolute;left:50%;top:-10%;bottom:-10%;width:8px;margin-left:-4px;background:#FFD642;transform:skewX(-8deg);box-shadow:0 0 30px #FFD642}
+.vsx .side{position:relative;height:100%;display:flex;flex-direction:column;justify-content:center;gap:6px;padding:0 3vw;z-index:1}
+.vsx .side.l{animation:vsl .5s cubic-bezier(.2,1.2,.4,1) both;align-items:flex-start}
+.vsx .side.r{animation:vsr .5s cubic-bezier(.2,1.2,.4,1) both;align-items:flex-end;text-align:right}
+@keyframes vsl{from{transform:translateX(-60vw)}}@keyframes vsr{from{transform:translateX(60vw)}}
+.vsx .tn{font-family:var(--display);font-style:italic;font-weight:800;font-size:clamp(20px,4vw,40px);line-height:1;text-transform:uppercase;text-shadow:0 3px 0 rgba(0,0,0,.4)}
+.vsx .ov{font-family:var(--info,system-ui);font-weight:700;font-size:13px;color:#FFD642;letter-spacing:.08em}
+.vsx .trio{display:flex;align-items:flex-end;gap:0;margin-top:4px}
+.vsx .side.r .trio{flex-direction:row-reverse}
+.vsx .m{position:relative;width:clamp(84px,13vw,170px);display:flex;flex-direction:column;align-items:center;animation:vsm .45s ease-out both}
+.vsx .m+.m{margin-left:-2vw}.vsx .side.r .m+.m{margin-left:0;margin-right:-2vw}
+.vsx .m:nth-child(1){animation-delay:.25s}.vsx .m:nth-child(2){animation-delay:.38s}.vsx .m:nth-child(3){animation-delay:.51s}
+@keyframes vsm{from{opacity:0;transform:translateY(30px) scale(.9)}}
+.vsx .m img{width:100%;aspect-ratio:1;object-fit:cover;filter:drop-shadow(0 8px 14px rgba(0,0,0,.55))}
+.vsx .m img.card{width:78%;border:3px solid #fff;transform:rotate(-3deg);margin-bottom:8%}
+.vsx .m b{font-family:var(--display);font-style:italic;font-weight:800;font-size:clamp(12px,1.6vw,17px);text-transform:uppercase;background:rgba(5,10,24,.85);padding:1px 8px;margin-top:-10px;white-space:nowrap;z-index:1}
+.vsx .m i{font-style:normal;font-family:var(--info,system-ui);font-size:10px;font-weight:800;padding:1px 6px;border-radius:3px;color:#06142e;margin-top:3px}
+.vsx .mid{position:relative;z-index:2;font-family:var(--display);font-style:italic;font-weight:900;font-size:clamp(56px,11vw,120px);color:#FFD642;text-shadow:0 5px 0 #7a4b00,0 0 40px rgba(255,214,66,.6);animation:vsv .5s .55s cubic-bezier(.2,1.6,.4,1) both}
+@keyframes vsv{from{transform:scale(3);opacity:0}}
+.vsx .go{position:absolute;bottom:calc(14px + env(safe-area-inset-bottom,0px));left:0;right:0;text-align:center;font-weight:700;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.7);z-index:2}
+.vsx.out{transition:opacity .25s;opacity:0}
+@media (orientation:portrait){.vsx{grid-template-columns:1fr;grid-template-rows:1fr auto 1fr;background:linear-gradient(170deg,rgba(120,20,30,.92) 0 49.6%,rgba(10,40,90,.92) 50.4% 100%)}.vsx::after{left:-10%;right:-10%;top:50%;bottom:auto;width:auto;height:6px;margin:-3px 0 0;transform:skewY(-6deg)}.vsx .side{align-items:center!important;text-align:center!important;padding:0 12px}.vsx .side.l{animation-name:vsr}.vsx .side.r{animation-name:vsl}.vsx .m{width:28vw}.vsx .mid{font-size:64px;justify-self:center}}
 /* summon sequence */
 .sum{position:fixed;inset:0;z-index:60;background:radial-gradient(120% 90% at 50% 40%,#16306a 0%,#060b18 70%);overflow:hidden;display:grid;place-items:center;touch-action:manipulation;--sc:#fff}
 .sum .rays{position:absolute;left:50%;top:42%;width:220vmax;height:220vmax;margin:-110vmax 0 0 -110vmax;background:repeating-conic-gradient(from 0deg,rgba(255,255,255,.0) 0 7deg,var(--sc) 7deg 9deg);opacity:0;mask:radial-gradient(circle,#000 0,transparent 55%);-webkit-mask:radial-gradient(circle,#000 0,transparent 55%);animation:spin 9s linear infinite}
@@ -481,6 +506,7 @@ body.on-roster::before{content:'';position:fixed;inset:0;pointer-events:none;z-i
           <button class="kbtn act" data-k="jump">SAUT<br>SMASH</button>
         </div>
         <div class="mtip" id="tip"></div>
+        <div class="vsx" id="vsx" hidden></div>
         <div class="rotate" id="rotate"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="7" y="2" width="10" height="20" rx="2" transform="rotate(-90 12 12)"/><path d="M4 4a10 10 0 0 1 6-2M20 20a10 10 0 0 1-6 2"/></svg><span>Tourne ton téléphone : le match se joue mieux en paysage.</span><button class="btn small" id="rot-ok">OK</button></div>
       </div>
     </section>
@@ -497,7 +523,7 @@ body.on-roster::before{content:'';position:fixed;inset:0;pointer-events:none;z-i
 <div id="sheet" class="sheet" hidden><div class="pan" id="sheet-pan"></div></div>
 <div id="result" class="modal" hidden><div class="box" id="result-box"></div></div>
 <div id="pmenu" class="modal" hidden><div class="box">
-  <h2>Pause</h2><span class="eyebrow">SkySpike · version 11</span>
+  <h2>Pause</h2><span class="eyebrow">SkySpike · version 12</span>
   <div class="atog"><label class="tog">Effets sonores <input type="checkbox" id="o-sound"></label><input type="range" id="o-fxv" min="0" max="100" aria-label="Volume des effets"></div>
   <div class="atog"><label class="tog">Musique <input type="checkbox" id="o-music"></label><input type="range" id="o-musv" min="0" max="100" aria-label="Volume de la musique"></div>
   <label class="tog">Assistance (zones de frappe plus larges) <input type="checkbox" id="o-assist"></label>
@@ -776,10 +802,16 @@ function portrait(id){
    Any missing / failed image keeps the drawn portrait. */
 const ART_BASE='https://raw.githubusercontent.com/PoppyMASTER/Spike/main/art/portraits/';
 const ARTKEY='skyspike-art-v1';
-let ART={};
+let ART={},ARTRAW={};
+const ARTRAWKEY='skyspike-artraw-v1';
 try{ART=JSON.parse(localStorage.getItem(ARTKEY))||{}}catch(e){ART={}}
+try{ARTRAW=JSON.parse(localStorage.getItem(ARTRAWKEY))||{}}catch(e){ARTRAW={}}
+for(const id of Object.keys(ARTRAW))if(!BY_ID[id]||typeof ARTRAW[id]!=='string'||!ARTRAW[id].startsWith('data:image'))delete ARTRAW[id];
+// transparent cut-out of the illustration (for the versus screen and ultimate cut-ins); null when only the drawn portrait exists
+const cutout=id=>ARTRAW[id]||null;
 for(const id of Object.keys(ART))if(!BY_ID[id]||typeof ART[id]!=='string'||!ART[id].startsWith('data:image'))delete ART[id];
-function artSave(){try{localStorage.setItem(ARTKEY,JSON.stringify(ART))}catch(e){/* quota: keep what fits in memory */}}
+function artSave(){try{localStorage.setItem(ARTKEY,JSON.stringify(ART))}catch(e){/* quota: keep what fits in memory */}try{localStorage.setItem(ARTRAWKEY,JSON.stringify(ARTRAW))}catch(e){}}
+function artRaw(img){const s=512,cv=document.createElement('canvas');cv.width=cv.height=s;const g=cv.getContext('2d');g.drawImage(img,0,0,s,s);try{const u=cv.toDataURL('image/webp',0.84);return u.startsWith('data:image/webp')?u:cv.toDataURL('image/png')}catch(e){return null}}
 function artCompose(id,img){
   const c=BY_ID[id],s=256,cv=document.createElement('canvas');cv.width=cv.height=s;const g=cv.getContext('2d');
   g.save();g.scale(s/200,s/200);drawCardBg(g,c,200);g.restore();
@@ -797,11 +829,11 @@ async function artLoad(){
   const one=async id=>{
     try{
       const r=await fetch(ART_BASE+id+'.png',{cache:'no-cache'});
-      if(r.status===404){if(ART[id]){delete ART[id];changed=true}return}
+      if(r.status===404){if(ART[id]||ARTRAW[id]){delete ART[id];delete ARTRAW[id];changed=true}return}
       if(!r.ok)return;
       const blob=await r.blob();if(!blob.size)return;
       const u=URL.createObjectURL(blob);
-      await new Promise(res=>{const im=new Image();im.onload=()=>{const d=artCompose(id,im);if(d&&d!==ART[id]){ART[id]=d;changed=true}URL.revokeObjectURL(u);res()};im.onerror=()=>{URL.revokeObjectURL(u);res()};im.src=u});
+      await new Promise(res=>{const im=new Image();im.onload=()=>{const d=artCompose(id,im);if(d&&d!==ART[id]){ART[id]=d;changed=true}const rw=artRaw(im);if(rw&&rw!==ARTRAW[id]){ARTRAW[id]=rw;changed=true}URL.revokeObjectURL(u);res()};im.onerror=()=>{URL.revokeObjectURL(u);res()};im.src=u});
     }catch(e){/* offline or blocked: keep cached / drawn portrait */}
   };
   const ids=ROSTER.map(c=>c.id);
@@ -1217,6 +1249,21 @@ function skBuild(){
 function skUI(){if(!M.sk)return;document.querySelectorAll('.skb').forEach(b=>{const id=b.dataset.sk,o=M.sk.L[id],eq=M.eq.L[skCat(id)]===id,over=id==='over'&&M.overT.L>gt;
   b.classList.toggle('eq',eq);b.classList.toggle('armed',(eq&&o.cd===0)||over);b.classList.toggle('cd',eq&&o.cd>0&&!over);b.classList.toggle('off',!eq);b.querySelector('em').textContent=eq&&o.cd>0&&!over?o.cd:''})}
 
+
+function vsMember(id,side){const c=BY_ID[id],cu=cutout(id);
+  return`<div class="m">${cu?`<img src="${cu}" alt="">`:`<img class="card" src="${portrait(id)}" alt="">`}<b>${esc(c.name.split(' ')[0])}</b><i style="background:${ROLES[c.role].color}">${ROLES[c.role].short} · ${c.rank}</i></div>`}
+function playVersus(opp){
+  const el=$('#vsx');M.intro=true;
+  const my=['SPK','SET','DEF'].map(r=>S.team[r]),th=['SPK','SET','DEF'].map(r=>opp.team[r].id);
+  el.innerHTML=`<div class="side l"><span class="tn">Ton équipe</span><span class="ov num">OVR ${teamOvr()}</span><div class="trio">${my.map(id=>vsMember(id,'L')).join('')}</div></div>
+    <div class="mid">VS</div>
+    <div class="side r"><span class="tn">${esc(opp.name)}</span><span class="ov num">OVR ${oppOvr(opp)} · ${M.diff.name}</span><div class="trio">${th.map(id=>vsMember(id,'R')).join('')}</div></div>
+    <span class="go">Touche pour commencer</span>`;
+  el.classList.remove('out');el.hidden=false;
+  setTimeout(()=>{try{sfx.summonHit(3)}catch(e){}},550);
+  let done=false;const end=()=>{if(done)return;done=true;el.classList.add('out');setTimeout(()=>{el.hidden=true;M.intro=false;try{sfx.whistle()}catch(e){}},250)};
+  const t=setTimeout(end,3400);el.onclick=()=>{clearTimeout(t);end()};
+}
 function startMatch(opp,isTour){
   music.want('match');crowdBed.start();
   M.active=true;M.paused=false;M.over=false;M.tour=!!isTour;M.opp=opp;
@@ -1240,9 +1287,10 @@ function startMatch(opp,isTour){
   updScore();resize();
   newPoint('L');
   window.scrollTo(0,0);
+  playVersus(opp);
 }
 function leaveMatch(){
-  M.active=false;crowdBed.stop();music.want('menu');document.body.classList.remove('in-match');try{if(document.fullscreenElement)document.exitFullscreen().catch(()=>{})}catch(e){}
+  M.active=false;M.intro=false;$('#vsx').hidden=true;crowdBed.stop();music.want('menu');document.body.classList.remove('in-match');try{if(document.fullscreenElement)document.exitFullscreen().catch(()=>{})}catch(e){}
   $('#m-play').hidden=true;$('#m-setup').hidden=false;$('#pmenu').hidden=true;
   oppCache[setup.diff]=genOpp(setup.diff);renderSetup();
 }
@@ -1761,6 +1809,7 @@ function frame(now){
   if(!lastNow)lastNow=now;
   let dt=Math.min(0.05,(now-lastNow)/1000);lastNow=now;
   if(!M.active||!W||M.paused||curView!=='match')return;
+  if(M.intro){render();return}
   if(M.cutin&&performance.now()-M.cutin.t0<1000)dt*=0.05;
   step(dt);render();
 }
@@ -2287,6 +2336,7 @@ function drawRecvBar(g){
 }
 const PIMG={};
 function portImg(id){if(!PIMG[id]){const i=new Image();i.src=portrait(id);PIMG[id]=i}return PIMG[id]}
+function cutImg(id){const u=cutout(id);if(!u)return null;const k='raw:'+id;if(!PIMG[k]){const i=new Image();i.src=u;PIMG[k]=i}return PIMG[k]}
 function drawCutin(g){
   const c=M.cutin;if(!c)return;
   const e=(performance.now()-c.t0)/1000;if(e>1.05){M.cutin=null;return}
@@ -2302,9 +2352,9 @@ function drawCutin(g){
   const rr=mulberry(((e*40)|0));g.strokeStyle='rgba(255,255,255,.35)';g.lineWidth=2;
   for(let i=0;i<16;i++){const y=(rr()-0.5)*bh,x=(rr()-0.5)*W*1.6,l=W*(0.15+rr()*0.3);g.beginPath();g.moveTo(x,y);g.lineTo(x+l,y);g.stroke()}
   g.restore();
-  const img=portImg(c.id),S=Math.min(H*0.78,W*0.55),ease=1-Math.pow(1-Math.min(1,e/0.22),3);
-  const ix=c.side==='L'?-S+(W*0.06+S)*ease:W-(W*0.06+S)*ease;
-  if(img.complete)g.drawImage(img,ix,by-S*0.55,S,S);
+  const raw=cutImg(c.id),img=raw&&raw.complete?raw:portImg(c.id),S=raw&&raw.complete?Math.min(H*1.08,W*0.62):Math.min(H*0.78,W*0.55),ease=1-Math.pow(1-Math.min(1,e/0.22),3);
+  const ix=c.side==='L'?-S+(W*0.04+S)*ease:W-(W*0.04+S)*ease;
+  if(img.complete){if(raw&&img===raw){g.save();g.shadowColor='rgba(0,0,0,.55)';g.shadowBlur=24;g.shadowOffsetX=c.side==='L'?10:-10;g.drawImage(img,ix,H-S,S,S);g.restore()}else g.drawImage(img,ix,by-S*0.55,S,S)}
   g.textAlign=c.side==='L'?'right':'left';g.textBaseline='middle';
   const tx=c.side==='L'?W*0.95:W*0.05;
   g.font=`italic ${Math.round(Math.min(W*0.1,H*0.16))}px ${FONT_D}`;g.lineWidth=6;g.strokeStyle='#05070b';
