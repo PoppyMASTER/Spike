@@ -32,6 +32,10 @@ func _ready() -> void:
 		_bench()
 	elif "--ui" in args:
 		_ui_shots(args[args.find("--ui") + 1])
+	elif "--fold" in args:
+		_fold_test(args[args.find("--fold") + 1])
+	elif "--opt" in args:
+		_opt_shots(args[args.find("--opt") + 1])
 	elif "--online" in args:
 		_online_test(args[args.find("--online") + 1], args[args.find("--online") + 2])
 
@@ -202,4 +206,45 @@ func _online_test(who: String, dir: String) -> void:
 			get_viewport().get_texture().get_image().save_png("%s/%s_%d.png" % [dir, who, shot])
 			shot += 1
 	print(who, " score ", m.game.score, " state ", m.game.state, " gt %.1f" % m.game.gt, " lag ", m.game.lag, " rtt ", m._rtt)
+	get_tree().quit()
+
+func _opt_shots(dir: String) -> void:
+	DirAccess.make_dir_recursive_absolute(dir)
+	await get_tree().create_timer(1.0).timeout
+	for f in [1.0, 1.4, 0.8]:
+		Save.S.settings.ui_scale = f
+		app.apply_ui_scale()
+		app.show_screen("roster")
+		app._options()
+		await get_tree().create_timer(0.6).timeout
+		await RenderingServer.frame_post_draw
+		get_viewport().get_texture().get_image().save_png("%s/opt_%d.png" % [dir, int(f * 100)])
+		for c in Kit.overlay.get_children():
+			c.queue_free()
+		await get_tree().create_timer(0.2).timeout
+	await RenderingServer.frame_post_draw
+	get_viewport().get_texture().get_image().save_png("%s/roster_80.png" % dir)
+	Save.S.settings.ui_scale = 1.0
+	Save.save()
+	get_tree().quit()
+
+# Z Fold: switch between the cover (2376x968) and inner (2160x1856) screens while running
+func _fold_test(dir: String) -> void:
+	DirAccess.make_dir_recursive_absolute(dir)
+	await get_tree().create_timer(1.0).timeout
+	app.show_screen("roster")
+	var sizes := [Vector2i(2376, 968), Vector2i(2160, 1856), Vector2i(2376, 968)]
+	for i in sizes.size():
+		get_window().size = sizes[i]
+		await get_tree().create_timer(0.8).timeout
+		await RenderingServer.frame_post_draw
+		get_viewport().get_texture().get_image().save_png("%s/fold_ui_%d.png" % [dir, i])
+	app.start_match(_cfg("SPK", 1))
+	await get_tree().create_timer(1.0).timeout
+	app.match_node.hud._end_intro()
+	for i in sizes.size():
+		get_window().size = sizes[(i + 1) % 3]
+		await get_tree().create_timer(2.5).timeout
+		await RenderingServer.frame_post_draw
+		get_viewport().get_texture().get_image().save_png("%s/fold_match_%d.png" % [dir, i])
 	get_tree().quit()

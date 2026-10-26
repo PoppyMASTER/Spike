@@ -32,7 +32,7 @@ func _fresh() -> Dictionary:
 		o[id] = {"lvl": 1, "stars": 0, "alloc": {}}
 	return {
 		"owned": o, "team": {"SPK": "max", "SET": "eva", "DEF": "paul"}, "pulls": 0, "wins": 0, "losses": 0, "last": [],
-		"settings": {"role": "SPK", "assist": true, "eq_atk": "full", "eq_def": "wall", "fx": true, "mus": true, "fx_vol": 0.8, "mus_vol": 0.45},
+		"settings": {"role": "SPK", "assist": true, "eq_atk": "full", "eq_def": "wall", "fx": true, "mus": true, "fx_vol": 0.8, "mus_vol": 0.45, "ui_scale": 1.0, "name": "Joueur"},
 		"trophies": {"bronze": 0, "argent": 0, "or": 0}, "tour": null, "box": 15, "wait": []}
 
 func save() -> void:

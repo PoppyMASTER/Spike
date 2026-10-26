@@ -132,6 +132,7 @@ var dim := 0.0
 var tilt := 0.0
 var cam_x := 0.0
 var cam_y := 0.0
+var view_w := 17.0      # court metres visible across the screen (set by the view)
 var pops: Array = []
 var parts: Array = []
 var fx: Array = []
@@ -1321,7 +1322,7 @@ func _trails(b: Ball) -> void:
 			path_pts.pop_front()
 
 func _camera(dt: float, b: Ball) -> void:
-	var lim := maxf(0.0, (12.2 if state == "serve" else 10.4) - 17.0 / 2.0)
+	var lim := maxf(0.0, (12.2 if state == "serve" else 10.4) - view_w / 2.0)
 	var focus := sgn(serving) * 6.5 if state == "serve" else b.x * 0.6 + (human.x * 0.25 if (human and not spectate) else 0.0)
 	cam_x += (clampf(focus, -lim, lim) - cam_x) * minf(1.0, dt * 3.2)
 	var hi_y := maxf(0.0, b.y - 6.0) * 0.85

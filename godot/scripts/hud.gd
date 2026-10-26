@@ -77,26 +77,31 @@ func _end_intro() -> void:
 
 # ---------------------------------------------------------------- layout
 func sz() -> Vector2: return get_viewport_rect().size
+## size reference for touch controls: the height on phones, capped on square screens
+## (Z Fold inner screen, tablets) so the buttons keep a phone-like size and don't cover the court
+func unit() -> float:
+	var s := sz()
+	return minf(s.y, s.x * 0.6)
 func btn_pos(k: String) -> Vector2:
 	var s := sz()
-	var r_big := minf(s.x, s.y) * 0.115
+	var r_big := unit() * 0.115
 	var base := Vector2(s.x - r_big - 22, s.y - r_big - 22)
 	match k:
 		"act": return base + Vector2(-r_big * 1.85, r_big * 0.35)
 		"feint": return base + Vector2(-r_big * 1.55, -r_big * 1.45)
 	return base
 func btn_r(k: String) -> float:
-	var m := minf(sz().x, sz().y)
+	var m := unit()
 	return m * (0.115 if k == "jump" else (0.085 if k == "act" else 0.068))
 func pause_rect() -> Rect2:
 	return Rect2(sz().x - 62, 10, 50, 50)
 func skill_pos(side_left: bool, i: int) -> Vector2:
 	var s := sz()
-	var r := minf(s.x, s.y) * 0.042
+	var r := unit() * 0.042
 	var y := s.y * 0.2 + i * r * 3.0
 	return Vector2(18 + r if side_left else s.x - 18 - r, y)
 func skill_r() -> float:
-	return minf(sz().x, sz().y) * 0.042
+	return unit() * 0.042
 
 # ---------------------------------------------------------------- input
 func _input(ev: InputEvent) -> void:
@@ -170,7 +175,7 @@ func _touch_up(idx: int) -> void:
 
 func _stick_move(pos: Vector2) -> void:
 	stick_p = pos
-	var R := minf(sz().x, sz().y) * 0.09
+	var R := unit() * 0.09
 	var d := pos - stick_o
 	var v := clampf(d.x / R, -1, 1)
 	g.stick_val = 0.0 if absf(v) < 0.14 else v
@@ -387,7 +392,7 @@ func _draw_controls(s: Vector2) -> void:
 	if g.spectate:
 		txt("MODE SPECTATEUR", Vector2(s.x / 2, s.y - 16), 18, Color(1, 1, 1, 0.8), HORIZONTAL_ALIGNMENT_CENTER, Kit.font_c, 4)
 		return
-	var R := minf(s.x, s.y) * 0.09
+	var R := unit() * 0.09
 	var base := stick_o if stick_id >= 0 else Vector2(R * 1.9, s.y - R * 1.9)
 	draw_circle(base, R * 1.15, Color(0.05, 0.06, 0.09, 0.35 if stick_id < 0 else 0.5))
 	draw_arc(base, R * 1.15, 0, TAU, 40, Color(1, 1, 1, 0.35), 2.0, true)

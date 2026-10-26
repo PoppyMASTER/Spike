@@ -90,6 +90,8 @@ func _resize() -> void:
 		var t := clampf((1.65 - a) / 0.5, 0.0, 1.0)
 		K = maxf(K, H / lerpf(8.6, 9.8, t))
 		FLOOR = H * lerpf(0.86, 0.79, t)
+	if g:
+		g.view_w = W / K
 	_build_arena()
 
 # ---------------------------------------------------------------- projection

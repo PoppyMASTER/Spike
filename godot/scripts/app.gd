@@ -14,6 +14,7 @@ var screen: Control
 var match_node: Node
 
 func _ready() -> void:
+	apply_ui_scale()
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	theme = Kit.theme
 	bg = Control.new()
@@ -45,6 +46,10 @@ func _ready() -> void:
 		p.add_theme_stylebox_override("panel", Kit._sb(Color(0.02, 0.06, 0.14, 0.6), -0.2, Vector4(14, 4, 14, 4)))
 		p.add_child(Kit.label(w, 15, Kit.FG))
 		hh.add_child(p)
+	var opt := Kit.button("Options", "base", 16)
+	opt.custom_minimum_size = Vector2(120, 40)
+	opt.pressed.connect(_options)
+	hh.add_child(opt)
 	# content
 	var cm := MarginContainer.new()
 	cm.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -130,3 +135,89 @@ func _match_done(result: Dictionary) -> void:
 	show_screen("match")
 	if screen.has_method("after_match"):
 		screen.after_match(result)
+
+# ---------------------------------------------------------------- options
+const UI_SCALES := [0.8, 0.9, 1.0, 1.1, 1.25, 1.4]
+
+func apply_ui_scale() -> void:
+	get_window().content_scale_factor = float(Save.S.settings.get("ui_scale", 1.0))
+
+func _options() -> void:
+	Sfx.ui()
+	var v := Kit.sheet(700)
+	_fill_options(v)
+
+func _fill_options(v: VBoxContainer) -> void:
+	for c in v.get_children():
+		c.queue_free()
+	var S: Dictionary = Save.S.settings
+	var head := Kit.hbox(10)
+	head.add_child(Kit.title("Options"))
+	head.add_child(Kit.spacer())
+	var close := Kit.button("Fermer", "ghost", 16)
+	close.pressed.connect(func(): Kit.close_sheet(v))
+	head.add_child(close)
+	v.add_child(head)
+	# interface size
+	v.add_child(Kit.label("TAILLE DE L'INTERFACE", 13, Kit.MUTED, Kit.font_c))
+	var sc := HFlowContainer.new()
+	sc.add_theme_constant_override("h_separation", 6)
+	sc.add_theme_constant_override("v_separation", 6)
+	for f in UI_SCALES:
+		var on := absf(float(S.get("ui_scale", 1.0)) - f) < 0.01
+		var b := Kit.chip("%d %%" % int(round(f * 100)), on)
+		var ff: float = f
+		b.pressed.connect(func():
+			S.ui_scale = ff
+			Save.save()
+			apply_ui_scale()
+			_fill_options.call_deferred(v))
+		sc.add_child(b)
+	v.add_child(sc)
+	v.add_child(Kit.label("Plus petit = plus de place à l'écran ; plus grand = boutons et textes plus gros.", 13, Kit.MUTED))
+	# sound + help
+	v.add_child(Kit.label("SON ET JEU", 13, Kit.MUTED, Kit.font_c))
+	var tg := HFlowContainer.new()
+	tg.add_theme_constant_override("h_separation", 6)
+	tg.add_theme_constant_override("v_separation", 6)
+	for k in [["mus", "Musique"], ["fx", "Effets sonores"], ["assist", "Assistance aux frappes"]]:
+		var key: String = k[0]
+		var b := Kit.chip("%s : %s" % [k[1], "oui" if S[key] else "non"], bool(S[key]))
+		b.pressed.connect(func():
+			S[key] = not bool(S[key])
+			Save.save()
+			Sfx.apply()
+			_fill_options.call_deferred(v))
+		tg.add_child(b)
+	v.add_child(tg)
+	# updates
+	v.add_child(Kit.label("MISE À JOUR", 13, Kit.MUTED, Kit.font_c))
+	var row := Kit.hbox(12)
+	var info := Kit.label("", 16, Color.WHITE, Kit.font_c)
+	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	row.add_child(info)
+	var chk := Kit.button("Rechercher", "primary", 18)
+	chk.custom_minimum_size = Vector2(190, 50)
+	chk.pressed.connect(func(): Updater.check_now())
+	row.add_child(chk)
+	v.add_child(row)
+	var quit_b := Kit.button("Fermer l'appli pour installer", "cta", 18)
+	quit_b.custom_minimum_size.y = 50
+	quit_b.pressed.connect(func(): get_tree().quit())
+	v.add_child(quit_b)
+	var upd := func(s: String):
+		if not is_instance_valid(info):
+			return
+		var msgs := {"idle": "Appuie sur Rechercher pour vérifier.", "checking": "Recherche en cours…",
+			"uptodate": "Ton jeu est à jour.", "downloading": "Téléchargement de la version %d…" % Updater.remote_build,
+			"ready": "Version %d prête : ferme puis rouvre l'appli pour l'installer." % Updater.ready_build,
+			"error": "Impossible de vérifier (pas d'internet ?). Réessaie plus tard."}
+		info.text = "Version %d · %s" % [Updater.active_build, msgs.get(s, "")]
+		chk.disabled = s in ["checking", "downloading"]
+		quit_b.visible = s == "ready"
+	upd.call(Updater.status if Updater.ready_build == 0 else "ready")
+	Updater.status_changed.connect(upd)
+	info.tree_exiting.connect(func():
+		if Updater.status_changed.is_connected(upd):
+			Updater.status_changed.disconnect(upd))
