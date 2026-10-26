@@ -31,10 +31,12 @@ var _try_list: Array = []
 var _conn_t := 0.0
 var _connack := false
 var _sent_connect := false
+var jitter := false      # tests: random delay + 10 % loss on received messages
 var override_url := ""  # tests: ws://127.0.0.1:9001
 
 func _ready() -> void:
 	var a := OS.get_cmdline_user_args()
+	jitter = "--jitter" in a
 	if "--broker" in a:
 		override_url = a[a.find("--broker") + 1]
 	set_process(false)
@@ -50,7 +52,37 @@ func host() -> void:
 	for i in 4:
 		code += LETTERS[randi() % LETTERS.length()]
 	_try_list = range(BROKERS.size())
+	if override_url == "":
+		_try_list = await _rank_brokers()
+		if role != "host":
+			return      # cancelled while probing
 	_next_broker()
+
+## open the WebSocket of every relay at once and keep them in order of answer time (fastest first)
+func _rank_brokers() -> Array:
+	var socks := []
+	var t0 := now()
+	for u in BROKERS:
+		var w := WebSocketPeer.new()
+		w.supported_protocols = PackedStringArray(["mqtt"])
+		socks.append(w if w.connect_to_url(u) == OK else null)
+	var times := {}
+	while now() - t0 < 4.0 and times.size() < BROKERS.size():
+		await get_tree().process_frame
+		for i in socks.size():
+			var w = socks[i]
+			if w == null or times.has(i):
+				continue
+			w.poll()
+			var st: int = w.get_ready_state()
+			if st == WebSocketPeer.STATE_OPEN:
+				times[i] = now() - t0
+				w.close()
+			elif st == WebSocketPeer.STATE_CLOSED:
+				times[i] = 99.0
+	var order := range(BROKERS.size())
+	order.sort_custom(func(a, b): return times.get(a, 50.0) < times.get(b, 50.0))
+	return order
 
 func join(c: String) -> bool:
 	c = c.strip_edges().to_upper().replace(" ", "")
@@ -228,6 +260,11 @@ func _parse() -> void:
 				var v = bytes_to_var(body.slice(off))
 				if v is Dictionary:
 					last_rx = now()
-					message.emit(v)
+					if jitter:
+						if randf() < 0.1:
+							continue        # test: lost packet
+						get_tree().create_timer(randf_range(0.03, 0.25)).timeout.connect(func(): message.emit(v))
+					else:
+						message.emit(v)
 			_:
 				pass

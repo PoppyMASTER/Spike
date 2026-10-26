@@ -174,7 +174,8 @@ func _online_test(who: String, dir: String) -> void:
 		app.screen.build()
 		await get_tree().create_timer(0.3).timeout
 		await RenderingServer.frame_post_draw
-		get_viewport().get_texture().get_image().save_png(dir + "/lobby_host.png")
+		if DisplayServer.get_name() != "headless":
+			get_viewport().get_texture().get_image().save_png(dir + "/lobby_host.png")
 		var f := FileAccess.open(dir + "/code.txt", FileAccess.WRITE)
 		f.store_string(Net.room_code())
 		f.close()
@@ -190,21 +191,35 @@ func _online_test(who: String, dir: String) -> void:
 	print(who, " match started, net=", m.net)
 	var t0 := Time.get_ticks_msec()
 	var shot := 0
+	var prev_b := Vector2.INF
+	var jumps := 0
+	var frames := 0
 	while Time.get_ticks_msec() - t0 < 26000:
-		await get_tree().create_timer(0.05).timeout
+		await get_tree().process_frame
+		if who != "host" and m.game.state == "live":
+			var bp := Vector2(m.game.ball.x, m.game.ball.y)
+			# a snap backwards against the ball's motion = visible stutter
+			if prev_b != Vector2.INF and (bp.x - prev_b.x) * signf(m.game.ball.vx) < -0.12:
+				jumps += 1
+			prev_b = bp
+			frames += 1
+		elif who != "host":
+			prev_b = Vector2.INF
 		if m.hud.screen == "intro" and Time.get_ticks_msec() - t0 > 1500:
 			m.hud._end_intro()
 		var g = m.game
 		# crude player: move toward the ball, press buttons now and then
 		if g.human:
 			g.stick_val = clampf((g.ball.x - g.human.x) * 0.8, -1, 1)
-			if randf() < 0.12:
+			if randf() < 0.02:
 				g.edge["act" if randf() < 0.6 else "jump"] = true
 		var el := Time.get_ticks_msec() - t0
-		if shot < 3 and el > 6000 + shot * 6000:
+		if shot < 3 and el > 6000 + shot * 6000 and DisplayServer.get_name() != "headless":
 			await RenderingServer.frame_post_draw
 			get_viewport().get_texture().get_image().save_png("%s/%s_%d.png" % [dir, who, shot])
 			shot += 1
+	if who != "host":
+		print("backward ball snaps: %d / %d live frames" % [jumps, frames])
 	print(who, " score ", m.game.score, " state ", m.game.state, " gt %.1f" % m.game.gt, " lag ", m.game.lag, " rtt ", m._rtt)
 	get_tree().quit()
 

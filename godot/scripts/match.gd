@@ -22,6 +22,12 @@ var _echo := 0.0
 # host: last edge counters seen from the guest
 var _seen := {"jump": 0, "act": 0, "feint": 0}
 var _done := false
+# guest: snapshot buffer, rendered a little in the past and interpolated (smooth even with jitter)
+var _buf: Array = []
+var _cur = null
+var _offs: Array = []      # host clock - local clock, per received snapshot
+var _offset := 0.0
+var _delay := 0.12
 
 func begin(c: Dictionary) -> void:
 	cfg = c
@@ -93,7 +99,13 @@ func _process(delta: float) -> void:
 				d["echo"] = _echo
 				Net.send(d)
 		"guest":
-			game.guest_step(dt)
+			if "--nobuf" in OS.get_cmdline_user_args():
+				if not _buf.is_empty():
+					game.apply_snap(_buf.back())
+					_buf.clear()
+				game.guest_step(dt, true)
+			else:
+				_guest_frame(dt)
 			_send_input(delta)
 
 # ---------------------------------------------------------------- guest
@@ -120,7 +132,7 @@ func _on_msg(d: Dictionary) -> void:
 	match d.get("t", ""):
 		"s":
 			if net == "guest":
-				game.apply_snap(d)
+				_push_snap(d)
 				var e := float(d.get("echo", 0.0))
 				if e > 0:
 					_rtt = lerpf(_rtt if _rtt > 0 else Time.get_ticks_msec() / 1000.0 - e, Time.get_ticks_msec() / 1000.0 - e, 0.2)
@@ -155,3 +167,46 @@ func _on_lost() -> void:
 		return
 	game.paused = true
 	hud.connection_lost()
+
+# ---------------------------------------------------------------- guest: jitter buffer
+func _push_snap(d: Dictionary) -> void:
+	var now := Time.get_ticks_msec() / 1000.0
+	var rt := float(d.get("rt", now))
+	if _cur != null and rt <= float(_cur.rt):
+		return                      # late duplicate / out of order
+	_offs.append(rt - now)
+	if _offs.size() > 90:
+		_offs.pop_front()
+	# best (least delayed) packet = clock offset; spread of delays = jitter -> render delay
+	var mx: float = _offs.max()
+	var mn: float = _offs.min()
+	_offset = mx
+	_delay = clampf((mx - mn) * 0.8 + 0.06, 0.08, 0.3)
+	var i := _buf.size()
+	while i > 0 and float(_buf[i - 1].rt) > rt:
+		i -= 1
+	_buf.insert(i, d)
+	if _cur == null:
+		_cur = d
+		game.apply_snap(d)
+
+func _guest_frame(dt: float) -> void:
+	if _buf.is_empty():
+		game.guest_step(dt, true)
+		return
+	var rr := Time.get_ticks_msec() / 1000.0 + _offset - _delay
+	while _buf.size() >= 2 and float(_buf[1].rt) <= rr:
+		_buf.pop_front()
+	if not is_same(_buf[0], _cur):
+		_cur = _buf[0]
+		game.apply_snap(_cur)
+	if _buf.size() >= 2:
+		var a: Dictionary = _buf[0]
+		var b: Dictionary = _buf[1]
+		var span := float(b.rt) - float(a.rt)
+		var k := clampf((rr - float(a.rt)) / span, 0.0, 1.0) if span > 0 else 1.0
+		game.interp(a, b, k)
+		game.guest_step(dt, false)
+	else:
+		game.guest_step(dt, true)    # starved: short extrapolation until the next packet
+	game.lag = _rtt

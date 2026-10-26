@@ -295,6 +295,9 @@ func _draw_score(s: Vector2) -> void:
 	if g.target_sets > 1:
 		txt("SETS %d · %d" % [g.sets[lft], g.sets[rgt]], Vector2(s.x / 2, y + 58), 13, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, Kit.font_c, 3)
 	draw_circle(Vector2(x0 - 12.0 if g.serving == lft else x0 + w + 12.0, y + 9), 4, Kit.YELLOW)
+	if online and g.lag > 0:
+		var ms := int(g.lag * 1000.0)
+		txt("PING %d ms" % ms, Vector2(s.x - 76, y + 14), 13, Color("7ee08a") if ms < 120 else (Kit.YELLOW if ms < 250 else Color("ff7a7a")), HORIZONTAL_ALIGNMENT_RIGHT, Kit.font_c, 3)
 	var pr := pause_rect()
 	draw_circle(pr.get_center(), 22, Color(0.05, 0.06, 0.09, 0.6))
 	draw_rect(Rect2(pr.get_center() + Vector2(-8, -9), Vector2(5, 18)), Color.WHITE)

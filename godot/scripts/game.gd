@@ -1359,13 +1359,24 @@ func snapshot() -> Dictionary:
 		"bk": b.kind, "pl": pl,
 		"fe": PackedFloat32Array([shake, flash, zoom, dim, tilt, hitstop, slow - gt]),
 		"fc": flash_col, "tc": trail_col, "th": trail_hot, "ps": paused, "ov": over, "slog": set_log,
-		"ev": rec}
+		"rt": Time.get_ticks_msec() / 1000.0}
 	if over:
 		d["stats"] = players.map(func(p): return p.stat)
+	# events are resent in every snapshot for 0.6 s so a lost packet never loses a sound/banner/point
+	var now: float = d.rt
+	for e in rec:
+		ev_seq += 1
+		ev_hist.append([ev_seq, now, e])
 	rec = []
+	while not ev_hist.is_empty() and now - float(ev_hist[0][1]) > 0.6:
+		ev_hist.pop_front()
+	d["ev"] = ev_hist.map(func(x): return [x[0], x[2]])
 	return d
 
 var _snap_gt := 0.0
+var ev_seq := 0
+var ev_hist: Array = []
+var ev_done := 0      # guest: last event sequence replayed
 func apply_snap(d: Dictionary) -> void:
 	gt = float(d.gt)
 	_snap_gt = gt
@@ -1407,8 +1418,10 @@ func apply_snap(d: Dictionary) -> void:
 	if d.has("stats"):
 		for i in players.size():
 			players[i].stat = d.stats[i]
-	for e in d.ev:
-		_replay(e)
+	for it in d.ev:
+		if int(it[0]) > ev_done:
+			ev_done = int(it[0])
+			_replay(it[1])
 	if d.ov and not over:
 		over = true
 
@@ -1445,8 +1458,37 @@ func _replay(e: Array) -> void:
 			over = true
 			match_over.emit(e[1])
 
-func guest_step(dt: float) -> void:
+## guest: smooth positions between snapshot a (already applied) and the next one b
+func interp(a: Dictionary, b: Dictionary, k: float) -> void:
+	var pa: PackedFloat32Array = a.pf
+	var pb: PackedFloat32Array = b.pf
+	var big := 2.5   # a jump bigger than this (new point, teleport) is not interpolated
+	for i in players.size():
+		var p: Plr = players[i]
+		var o := i * PF
+		if absf(pb[o] - pa[o]) < big:
+			p.x = lerpf(pa[o], pb[o], k)
+			p.y = lerpf(pa[o + 1], pb[o + 1], k)
+		p.z = lerpf(pa[o + 10], pb[o + 10], k)
+	var ba: PackedFloat32Array = a.b
+	var bb: PackedFloat32Array = b.b
+	if Vector2(bb[0] - ba[0], bb[1] - ba[1]).length() < 6.0 and int(ba[7]) == int(bb[7]):
+		ball.x = lerpf(ba[0], bb[0], k)
+		ball.y = lerpf(ba[1], bb[1], k)
+		ball.z = lerpf(ba[2], bb[2], k)
+		ball.spin = lerpf(ba[5], bb[5], k)
+	elif ball.held != null:
+		ball.x = ball.held.x + ball.held.f * 0.35
+	gt = lerpf(float(a.gt), float(b.gt), k)
+
+func guest_step(dt: float, extrapolate := true) -> void:
 	if over:
+		_feel(dt)
+		return
+	if not extrapolate:
+		for p in players:
+			if p.pose_t < gt and p.pose != "idle":
+				p.pose = "idle" if p.ground else "jump"
 		_feel(dt)
 		return
 	var rate := 0.0 if hitstop > 0 else (0.42 if slow > gt else 1.0)
