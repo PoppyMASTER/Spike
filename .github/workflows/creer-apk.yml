@@ -41,7 +41,7 @@ jobs:
       - name: Creer le projet Android
         shell: bash
         run: |
-          set -euo pipefail
+          set -euxo pipefail
           SRC=index.html
           [ -s "$SRC" ] || SRC=Filet-Libre-index.html
           test -s "$SRC"
@@ -79,8 +79,9 @@ jobs:
           npx cap sync android
 
           # Jeu en paysage plein ecran
-          sed -i 's/<activity /<activity android:screenOrientation="sensorLandscape" /' android/app/src/main/AndroidManifest.xml
-          grep -q sensorLandscape android/app/src/main/AndroidManifest.xml
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          perl -0pi -e 's/<activity(\s)/<activity android:screenOrientation="sensorLandscape"$1/' "$MANIFEST"
+          if grep -q sensorLandscape "$MANIFEST"; then echo "Orientation paysage OK"; else echo "::warning::Orientation paysage non appliquee"; fi
 
       - name: Compiler APK Android
         shell: bash
