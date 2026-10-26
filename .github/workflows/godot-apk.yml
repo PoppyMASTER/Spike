@@ -112,7 +112,14 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: npx wrangler whoami > /dev/null
+        run: |
+          set +e
+          npx wrangler whoami > w.log 2>&1
+          code=$?
+          grep -qi "not authenticated\|invalid.*token\|Authentication error" w.log && echo "reason=auth" >> $GITHUB_OUTPUT
+          grep -qi "more than one account\|multiple accounts" w.log && echo "reason=accounts" >> $GITHUB_OUTPUT
+          rm -f w.log
+          exit $code
 
       - name: "Serveur social 3/4 : tables"
         id: cf_db
@@ -123,7 +130,14 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         # tables are created only if missing: safe on every build
-        run: npx wrangler d1 execute skyspike-social --remote --file schema.sql > /dev/null
+        run: |
+          set +e
+          npx wrangler d1 execute skyspike-social --remote --file schema.sql > d.log 2>&1
+          code=$?
+          grep -qi "not authorized\|Authentication\|code: 10000\|permission" d.log && echo "reason=perm" >> $GITHUB_OUTPUT
+          grep -qi "not found\|Couldn't find" d.log && echo "reason=notfound" >> $GITHUB_OUTPUT
+          rm -f d.log
+          exit $code
 
       - name: "Serveur social 4/4 : deploiement"
         id: cf_deploy
@@ -134,13 +148,53 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          set -o pipefail
+          set +e
           npx wrangler deploy > deploy.log 2>&1
+          code=$?
+          grep -qi "workers.dev subdomain\|register a workers.dev" deploy.log && echo "reason=subdomain" >> $GITHUB_OUTPUT
+          grep -qi "not authorized\|Authentication error\|code: 10000" deploy.log && echo "reason=perm" >> $GITHUB_OUTPUT
           url=$(grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' deploy.log | head -1)
           rm -f deploy.log
+          set -e
+          test $code -eq 0
           test -n "$url"
           echo "{\"url\": \"$url\"}" > ../godot/data/server.json
           curl -fsS "$url/v1" > /dev/null
+
+      # markers: their success/skip tells which deploy stage failed and why (no logs exposed)
+      - name: "ECHEC dependances"
+        if: steps.cf_npm.outcome == 'failure'
+        run: "true"
+      - name: "ECHEC connexion compte"
+        if: steps.cf_auth.outcome == 'failure'
+        run: "true"
+      - name: "ECHEC connexion : jeton invalide"
+        if: steps.cf_auth.outputs.reason == 'auth'
+        run: "true"
+      - name: "ECHEC connexion : plusieurs comptes"
+        if: steps.cf_auth.outputs.reason == 'accounts'
+        run: "true"
+      - name: "ECHEC tables"
+        if: steps.cf_db.outcome == 'failure'
+        run: "true"
+      - name: "ECHEC tables : permission D1"
+        if: steps.cf_db.outputs.reason == 'perm'
+        run: "true"
+      - name: "ECHEC tables : base introuvable"
+        if: steps.cf_db.outputs.reason == 'notfound'
+        run: "true"
+      - name: "ECHEC deploiement"
+        if: steps.cf_deploy.outcome == 'failure'
+        run: "true"
+      - name: "ECHEC deploiement : sous-domaine workers.dev a creer"
+        if: steps.cf_deploy.outputs.reason == 'subdomain'
+        run: "true"
+      - name: "ECHEC deploiement : permission"
+        if: steps.cf_deploy.outputs.reason == 'perm'
+        run: "true"
+      - name: "OK serveur social en ligne"
+        if: steps.cf_deploy.outcome == 'success'
+        run: "true"
 
       - name: Exporter l'APK
         shell: bash
