@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>SkySpike</title>
+<style>
+  html,body{margin:0;height:100%;background:#081634;color:#f4f7ff;font-family:system-ui,sans-serif}
+  .s{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px}
+  .b{width:56px;height:56px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#fff 0 25%,#3d7bff 75%);animation:j .7s ease-in-out infinite alternate}
+  @keyframes j{to{transform:translateY(-22px)}}
+  p{margin:0;font-size:14px;letter-spacing:.08em;text-transform:uppercase;color:#9fb3d9}
+</style>
+</head>
+<body>
+<div class="s"><div class="b"></div><p id="m">Recherche de mise à jour…</p></div>
+<script>
+// Live updates: the APK only ships this loader + a bundled copy of the game.
+// On each launch it fetches the latest index.html from the GitHub repo, keeps it
+// for offline play, and falls back to the last copy (or the bundled one).
+(function(){
+  var URL='https://raw.githubusercontent.com/PoppyMASTER/Spike/main/index.html';
+  var MARK='<!--SKYSPIKE-GAME';
+  var KEY='skyspike-live-html';
+  var HEAD='<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>';
+  function run(html){if(!/^\s*<!doctype/i.test(html))html=HEAD+html+'</body></html>';document.open();document.write(html);document.close()}
+  function cached(){try{return localStorage.getItem(KEY)}catch(e){return null}}
+  function fallback(){
+    var c=cached();
+    if(c&&c.indexOf(MARK)>=0){run(c);return}
+    fetch('game.html').then(function(r){return r.text()}).then(run).catch(function(){document.getElementById('m').textContent='Impossible de charger le jeu'});
+  }
+  var done=false;
+  var timer=setTimeout(function(){if(!done){done=true;fallback()}},6000);
+  fetch(URL+'?t='+Date.now(),{cache:'no-store'}).then(function(r){if(!r.ok)throw 0;return r.text()}).then(function(html){
+    if(done)return;
+    if(html.indexOf(MARK)<0)throw 0;
+    done=true;clearTimeout(timer);
+    try{localStorage.setItem(KEY,html)}catch(e){}
+    run(html);
+  }).catch(function(){if(!done){done=true;clearTimeout(timer);fallback()}});
+})();
+</script>
+</body>
+</html>

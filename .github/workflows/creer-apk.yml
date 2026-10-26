@@ -1,10 +1,15 @@
 
-name: Compiler Filet Libre en APK
+name: Compiler SkySpike en APK
 
 on:
   push:
     branches:
       - main
+    # Le jeu (index.html) se met a jour tout seul dans l'appli :
+    # on ne recompile l'APK que si le lanceur ou ce workflow changent.
+    paths:
+      - 'app/**'
+      - '.github/workflows/creer-apk.yml'
   workflow_dispatch:
 
 permissions:
@@ -42,15 +47,17 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          SRC=index.html
-          [ -s "$SRC" ] || SRC=Filet-Libre-index.html
-          test -s "$SRC"
+          test -s index.html
+          test -s app/loader.html
           mkdir -p www
-          cp "$SRC" www/index.html
+          # Lanceur qui telecharge la derniere version du jeu a chaque demarrage
+          cp app/loader.html www/index.html
+          # Copie embarquee du jeu, utilisee hors connexion au premier lancement
+          cp index.html www/game.html
 
           cat > package.json <<'PACKAGE'
           {
-            "name": "filet-libre",
+            "name": "skyspike",
             "version": "1.0.0",
             "private": true,
             "dependencies": {
@@ -65,11 +72,11 @@ jobs:
 
           cat > capacitor.config.json <<'CONFIG'
           {
-            "appId": "com.filetlibre.volley",
-            "appName": "Filet Libre",
+            "appId": "com.skyspike.game",
+            "appName": "SkySpike",
             "webDir": "www",
             "android": {
-              "backgroundColor": "#0c1018"
+              "backgroundColor": "#081634"
             }
           }
           CONFIG
@@ -87,16 +94,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Cle de signature fixe : les prochains APK s'installeront par-dessus sans desinstaller
+          mkdir -p ~/.android
+          cp app/debug.keystore ~/.android/debug.keystore
           cd android
           chmod +x gradlew
           ./gradlew :app:assembleDebug --no-daemon
-          cp app/build/outputs/apk/debug/app-debug.apk ../Filet-Libre.apk
+          cp app/build/outputs/apk/debug/app-debug.apk ../SkySpike.apk
 
       - name: Publier APK
         uses: actions/upload-artifact@v7
         with:
-          name: Filet-Libre-APK
-          path: Filet-Libre.apk
+          name: SkySpike-APK
+          path: SkySpike.apk
           archive: false
           if-no-files-found: error
           retention-days: 30
