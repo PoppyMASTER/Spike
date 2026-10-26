@@ -1,0 +1,111 @@
+name: Compiler SkySpike Godot (prototype)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'godot/**'
+      - 'app/debug.keystore'
+      - '.github/workflows/godot-apk.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GODOT_VERSION: 4.7.2
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Recuperer le projet
+        uses: actions/checkout@v4
+
+      - name: Preparer Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Preparer Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+
+      - name: Installer les outils Android
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+
+      - name: Cache Godot
+        id: cache-godot
+        uses: actions/cache@v4
+        with:
+          path: ~/godot-dl
+          key: godot-${{ env.GODOT_VERSION }}
+
+      - name: Telecharger Godot et les modeles d'export
+        if: steps.cache-godot.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/godot-dl && cd ~/godot-dl
+          base="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable"
+          curl -fsSL -o godot.zip "$base/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          curl -fsSL -o templates.tpz "$base/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+
+      - name: Installer Godot
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd ~/godot-dl
+          unzip -o -q godot.zip
+          mv "Godot_v${GODOT_VERSION}-stable_linux.x86_64" ~/godot
+          chmod +x ~/godot
+          tdir=~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
+          mkdir -p "$tdir" /tmp/tpl
+          unzip -o -q templates.tpz -d /tmp/tpl
+          cp /tmp/tpl/templates/android_* "$tdir"/
+          cp /tmp/tpl/templates/version.txt "$tdir"/
+          ls -la "$tdir"
+          # Editor settings: Android SDK, Java and the shared debug key (same as the web launcher APK)
+          mkdir -p ~/.config/godot
+          minor=$(echo "$GODOT_VERSION" | cut -d. -f1,2)
+          cat > ~/.config/godot/editor_settings-${minor}.tres <<SETTINGS
+          [gd_resource type="EditorSettings" format=3]
+
+          [resource]
+          export/android/android_sdk_path = "${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          export/android/java_sdk_path = "${JAVA_HOME}"
+          export/android/debug_keystore = "${GITHUB_WORKSPACE}/app/debug.keystore"
+          export/android/debug_keystore_user = "androiddebugkey"
+          export/android/debug_keystore_pass = "android"
+          SETTINGS
+          sed -i 's/^ *//' ~/.config/godot/editor_settings-${minor}.tres
+          cat ~/.config/godot/editor_settings-${minor}.tres
+
+      - name: Exporter l'APK
+        shell: bash
+        env:
+          GODOT_ANDROID_KEYSTORE_DEBUG_PATH: ${{ github.workspace }}/app/debug.keystore
+          GODOT_ANDROID_KEYSTORE_DEBUG_USER: androiddebugkey
+          GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD: android
+        run: |
+          set -euo pipefail
+          cd godot
+          mkdir -p build
+          ~/godot --headless --path . --import || true
+          ~/godot --headless --path . --export-debug "Android" build/SkySpike-Godot.apk
+          ls -la build
+          test -s build/SkySpike-Godot.apk
+
+      - name: Publier l'APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: SkySpike-Godot-APK
+          path: godot/build/SkySpike-Godot.apk
+          archive: false
+          if-no-files-found: error
+          retention-days: 30
