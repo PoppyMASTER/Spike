@@ -1,3 +1,4 @@
+
 name: Compiler Filet Libre en APK
 
 on:
@@ -13,6 +14,7 @@ jobs:
   creer-apk:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+
     steps:
       - name: Recuperer le jeu
         uses: actions/checkout@v4
@@ -29,24 +31,26 @@ jobs:
           java-version: '21'
 
       - name: Preparer Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
 
       - name: Installer Android SDK 36
         run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
 
-      - name: Creer le projet Android a partir du HTML
+      - name: Creer le projet Android
         shell: bash
         run: |
           set -euo pipefail
           test -s index.html
           mkdir -p www
           cp index.html www/index.html
+
           cat > package.json <<'PACKAGE'
           {
             "name": "filet-libre",
             "version": "1.0.0",
             "private": true,
-            "description": "Jeu de volley 3v3 Filet Libre",
             "dependencies": {
               "@capacitor/core": "8.5.3",
               "@capacitor/android": "8.5.3"
@@ -56,6 +60,7 @@ jobs:
             }
           }
           PACKAGE
+
           cat > capacitor.config.json <<'CONFIG'
           {
             "appId": "com.filetlibre.volley",
@@ -66,11 +71,12 @@ jobs:
             }
           }
           CONFIG
+
           npm install --no-audit --no-fund
           npx cap add android
           npx cap sync android
 
-      - name: Compiler l'APK installable
+      - name: Compiler APK Android
         shell: bash
         run: |
           set -euo pipefail
@@ -79,9 +85,10 @@ jobs:
           ./gradlew :app:assembleDebug --no-daemon
           cp app/build/outputs/apk/debug/app-debug.apk ../Filet-Libre.apk
 
-      - name: Telecharger directement Filet-Libre.apk
+      - name: Publier APK
         uses: actions/upload-artifact@v7
         with:
+          name: Filet-Libre-APK
           path: Filet-Libre.apk
           archive: false
           if-no-files-found: error
