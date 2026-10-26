@@ -149,6 +149,18 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set +e
+          # first Worker on the account: create its workers.dev subdomain if there is none yet
+          API="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain"
+          AUTH="Authorization: Bearer $CLOUDFLARE_API_TOKEN"
+          if ! curl -fsS -H "$AUTH" "$API" | grep -q '"subdomain":"[a-z0-9]'; then
+            for name in skyspike skyspike-game skyspike-volley "skyspike-$RANDOM"; do
+              if curl -fsS -X PUT -H "$AUTH" -H "Content-Type: application/json" --data "{\"subdomain\":\"$name\"}" "$API" > /dev/null; then
+                echo "subdomain=$name" >> $GITHUB_OUTPUT
+                sleep 20
+                break
+              fi
+            done
+          fi
           npx wrangler deploy > deploy.log 2>&1
           code=$?
           grep -qi "workers.dev subdomain\|register a workers.dev" deploy.log && echo "reason=subdomain" >> $GITHUB_OUTPUT
@@ -192,6 +204,9 @@ jobs:
       - name: "ECHEC deploiement : permission"
         if: steps.cf_deploy.outputs.reason == 'perm'
         run: "true"
+      - name: "Sous-domaine workers.dev cree"
+        if: steps.cf_deploy.outputs.subdomain != ''
+        run: echo "${{ steps.cf_deploy.outputs.subdomain }}.workers.dev"
       - name: "OK serveur social en ligne"
         if: steps.cf_deploy.outcome == 'success'
         run: "true"
