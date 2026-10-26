@@ -1,4 +1,4 @@
-<!--SKYSPIKE-GAME v10-->
+<!--SKYSPIKE-GAME v11-->
 <title>SkySpike</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -497,7 +497,7 @@ body.on-roster::before{content:'';position:fixed;inset:0;pointer-events:none;z-i
 <div id="sheet" class="sheet" hidden><div class="pan" id="sheet-pan"></div></div>
 <div id="result" class="modal" hidden><div class="box" id="result-box"></div></div>
 <div id="pmenu" class="modal" hidden><div class="box">
-  <h2>Pause</h2><span class="eyebrow">SkySpike · version 10</span>
+  <h2>Pause</h2><span class="eyebrow">SkySpike · version 11</span>
   <div class="atog"><label class="tog">Effets sonores <input type="checkbox" id="o-sound"></label><input type="range" id="o-fxv" min="0" max="100" aria-label="Volume des effets"></div>
   <div class="atog"><label class="tog">Musique <input type="checkbox" id="o-music"></label><input type="range" id="o-musv" min="0" max="100" aria-label="Volume de la musique"></div>
   <label class="tog">Assistance (zones de frappe plus larges) <input type="checkbox" id="o-assist"></label>
@@ -784,8 +784,9 @@ function artCompose(id,img){
   const c=BY_ID[id],s=256,cv=document.createElement('canvas');cv.width=cv.height=s;const g=cv.getContext('2d');
   g.save();g.scale(s/200,s/200);drawCardBg(g,c,200);g.restore();
   // cover-fit, anchored near the top so heads are never cropped
-  const iw=img.naturalWidth||img.width,ih=img.naturalHeight||img.height,k=Math.max(s/iw,s/ih),dw=iw*k,dh=ih*k;
-  g.drawImage(img,(s-dw)/2,Math.min(0,(s-dh)*0.15),dw,dh);
+  // slight zoom on the face, top edge kept so hair is never cropped
+  const iw=img.naturalWidth||img.width,ih=img.naturalHeight||img.height,k=Math.max(s/iw,s/ih)*1.16,dw=iw*k,dh=ih*k;
+  g.drawImage(img,(s-dw)/2,0,dw,dh);
   g.strokeStyle='rgba(255,255,255,.55)';g.lineWidth=3;g.strokeRect(1.5,1.5,s-3,s-3);
   let url;try{url=cv.toDataURL('image/webp',0.86);if(!url.startsWith('data:image/webp'))url=cv.toDataURL('image/jpeg',0.88)}catch(e){url=null}
   return url;
