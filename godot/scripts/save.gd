@@ -61,12 +61,22 @@ func team_ovr() -> int:
 	return int(round(s / 3.0))
 
 ## Returns [{id, tag}] — same rules as the web build (duplicates add a star, full box -> waiting list).
+const PITY := 60   # an S or S+ is guaranteed at the latest on this pull
+func pity_left() -> int:
+	return PITY - int(S.get("pity", 0))
+
 func pull(n: int) -> Array:
 	var res := []
+	var pity := int(S.get("pity", 0))
 	for i in n:
-		res.append(DB.roll_one())
+		pity += 1
+		var id := DB.roll_one(false, pity >= PITY)
+		if DB.BY_ID[id].rank in ["S", "S+"]:
+			pity = 0
+		res.append(id)
 	if n == 10 and not res.any(func(id): return ["A", "S", "S+"].has(DB.BY_ID[id].rank)):
 		res[9] = DB.roll_one(true)
+	S.pity = pity
 	var out := []
 	for id in res:
 		var tag: String

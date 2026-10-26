@@ -17,7 +17,7 @@ var finished := false
 var ok_btn: Button
 var skip_btn: Button
 
-func play(r: Array) -> void:
+func play(r: Array, instant := false) -> void:
 	res = r
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_STOP
@@ -25,8 +25,9 @@ func play(r: Array) -> void:
 		var rk: String = DB.BY_ID[x.id].rank
 		if DB.rank_idx(rk) > DB.rank_idx(best):
 			best = rk
-	skip_btn = Kit.button("Passer ›", "ghost", 16)
-	skip_btn.position = Vector2(get_viewport_rect().size.x - 150, 14)
+	skip_btn = Kit.button("Passer  ››", "primary", 20)
+	skip_btn.custom_minimum_size = Vector2(170, 52)
+	skip_btn.position = Vector2(get_viewport_rect().size.x - 200, 16)
 	skip_btn.pressed.connect(_finish)
 	add_child(skip_btn)
 	ok_btn = Kit.button("Continuer", "primary", 26)
@@ -49,7 +50,11 @@ func play(r: Array) -> void:
 		else:
 			tt += 0.2 if cards.size() == 1 else 0.14
 	set_meta("end_t", tt + 0.15)
-	Sfx.play("summon_drop")
+	if instant:
+		_finish()
+		Sfx.play("summon_hit", DB.rank_idx(best))
+	else:
+		Sfx.play("summon_drop")
 
 func _layout() -> void:
 	var s := get_viewport_rect().size

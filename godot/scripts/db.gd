@@ -76,11 +76,21 @@ func roll_rank() -> String:
 		if r < 0:
 			return k
 	return "C"
-func roll_one(min_a := false) -> String:
+func roll_one(min_a := false, force_s := false) -> String:
 	var rk := roll_rank()
 	if min_a and (rk == "B" or rk == "C"):
 		rk = "A"
+	if force_s and not (rk == "S" or rk == "S+"):
+		# pity: S or S+ in the same proportions as their normal rates
+		var s := float(D.RANKS["S"].rate)
+		var sp := float(D.RANKS["S+"].rate)
+		rk = "S+" if randf() * (s + sp) < sp else "S"
 	return ROSTER.filter(func(c): return c.rank == rk).pick_random().id
+
+## odds of one specific character on a normal pull (%)
+func char_rate(id: String) -> float:
+	var rk: String = BY_ID[id].rank
+	return float(D.RANKS[rk].rate) / ROSTER.filter(func(c): return c.rank == rk).size()
 
 # ---- opponents
 func gen_opp(d: int, used: Array = []) -> Dictionary:
