@@ -19,7 +19,6 @@ Sfx="*res://scripts/sfx.gd"
 Kit="*res://scripts/kit.gd"
 Art="*res://scripts/art.gd"
 Net="*res://scripts/net.gd"
-Social="*res://scripts/social.gd"
 
 [display]
 

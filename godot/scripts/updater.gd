@@ -46,6 +46,9 @@ func _init() -> void:
 		_save_state(st)
 	active_build = apk_build
 	var pb := int(st.get("build", 0))
+	# a pack that needs a newer APK (new autoload, permission...) is never mounted
+	if int(st.get("min_apk", 0)) > apk_build:
+		pb = 0
 	if pb > apk_build and FileAccess.file_exists(PCK):
 		if ProjectSettings.load_resource_pack(PCK, true):
 			active_build = pb
@@ -90,12 +93,16 @@ func _fetch(url: String, headers := PackedStringArray()) -> Array:
 		return [-int(r[0]), PackedByteArray()]
 	return [int(r[1]), r[3]]
 
+var remote_min_apk := 0
+const RELEASE_PAGE := "https://github.com/PoppyMASTER/Spike/releases/tag/godot-latest"
+
 ## latest build number: release manifest first, then the GitHub API (release title "… build N")
 func _remote_build() -> int:
 	var a := await _fetch(BASE + "manifest.json")
 	if a[0] == 200:
 		var m = JSON.parse_string((a[1] as PackedByteArray).get_string_from_utf8())
 		if m is Dictionary and m.has("build"):
+			remote_min_apk = int(m.get("min_apk", 0))
 			return int(m.build)
 	var e1 := "manifeste %d" % a[0]
 	var b := await _fetch(API, PackedStringArray(["Accept: application/vnd.github+json", "User-Agent: SkySpike"]))
@@ -123,6 +130,9 @@ func _check() -> void:
 	if remote == ready_build:
 		_done("ready")
 		return
+	if remote_min_apk > apk_build:
+		_done("apk")          # this update needs the new APK: offer the download page instead
+		return
 	_set_status("downloading")
 	var dl := HTTPRequest.new()
 	dl.download_file = PCK_NEW
@@ -139,6 +149,7 @@ func _check() -> void:
 	if r2[1] == 200 and FileAccess.file_exists(PCK_NEW):
 		var st := _state()
 		st.pending = remote
+		st.min_apk = remote_min_apk
 		_save_state(st)
 		ready_build = remote
 		_done("ready")

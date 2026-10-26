@@ -18,7 +18,14 @@ var font_i: Font      # Inter (info)
 var theme: Theme
 var overlay: Control  # set by the app: sheets and modals go here
 
+## social client: created here (not an autoload) so update packs work on every installed APK —
+## the autoload list comes from the APK, scripts from the pack
+var soc: Node
+
 func _ready() -> void:
+	soc = load("res://scripts/social.gd").new()
+	soc.name = "Social"
+	get_tree().root.add_child.call_deferred(soc)
 	font_d = load("res://fonts/Anton-Regular.ttf")
 	font_c = load("res://fonts/BarlowCondensed-Bold.ttf")
 	var inter := FontVariation.new()

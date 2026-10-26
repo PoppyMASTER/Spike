@@ -83,8 +83,8 @@ func _ready() -> void:
 	Art.updated.connect(func(): if screen and screen.has_method("refresh"): screen.refresh())
 	show_screen("team")
 	Sfx.music("menu")
-	Social.hub_changed.connect(_nav_badge)
-	Social.invited.connect(_on_invite)
+	Kit.soc.hub_changed.connect(_nav_badge)
+	Kit.soc.invited.connect(_on_invite)
 	Updater.update_ready.connect(func(_b): Kit.toast("Mise à jour téléchargée : relance l'appli pour l'installer"))
 	if Updater.ready_build > 0:
 		Kit.toast("Mise à jour téléchargée : relance l'appli pour l'installer")
@@ -123,7 +123,7 @@ func show_screen(id: String) -> void:
 # ---------------------------------------------------------------- matches
 func start_match(cfg: Dictionary) -> void:
 	visible = false
-	Social.status = "match"
+	Kit.soc.status = "match"
 	match_node = Node.new()
 	match_node.set_script(load("res://scripts/match.gd"))
 	get_parent().add_child(match_node)
@@ -135,7 +135,7 @@ func _match_done(result: Dictionary) -> void:
 	match_node.queue_free()
 	match_node = null
 	visible = true
-	Social.status = "menu"
+	Kit.soc.status = "menu"
 	Sfx.music("menu")
 	show_screen("match")
 	if screen.has_method("after_match"):
@@ -209,7 +209,11 @@ func _fill_options(v: VBoxContainer) -> void:
 	v.add_child(row)
 	var quit_b := Kit.button("Fermer l'appli pour installer", "cta", 18)
 	quit_b.custom_minimum_size.y = 50
-	quit_b.pressed.connect(func(): get_tree().quit())
+	quit_b.pressed.connect(func():
+		if Updater.status == "apk":
+			OS.shell_open(Updater.RELEASE_PAGE)
+		else:
+			get_tree().quit())
 	v.add_child(quit_b)
 	var upd := func(s: String):
 		if not is_instance_valid(info):
@@ -217,10 +221,12 @@ func _fill_options(v: VBoxContainer) -> void:
 		var msgs := {"idle": "Appuie sur Rechercher pour vérifier.", "checking": "Recherche en cours…",
 			"uptodate": "Ton jeu est à jour.", "downloading": "Téléchargement de la version %d…" % Updater.remote_build,
 			"ready": "Version %d prête : ferme puis rouvre l'appli pour l'installer." % Updater.ready_build,
+			"apk": "La version %d demande d'installer le nouvel APK (une seule fois)." % Updater.remote_build,
 			"error": "Échec de la vérification (%s). Réessaie, et envoie-moi ce code si ça persiste." % Updater.last_error}
 		info.text = "Version %d · %s" % [Updater.active_build, msgs.get(s, "")]
 		chk.disabled = s in ["checking", "downloading"]
-		quit_b.visible = s == "ready"
+		quit_b.visible = s in ["ready", "apk"]
+		quit_b.text = "TÉLÉCHARGER LE NOUVEL APK" if s == "apk" else "FERMER L'APPLI POUR INSTALLER"
 	upd.call(Updater.status if Updater.ready_build == 0 else "ready")
 	Updater.status_changed.connect(upd)
 	info.tree_exiting.connect(func():
@@ -231,7 +237,7 @@ func _fill_options(v: VBoxContainer) -> void:
 func _nav_badge() -> void:
 	for b in nav.get_children():
 		if b.get_meta("id") == "social":
-			var n := Social.badge()
+			var n: int = Kit.soc.badge()
 			b.text = "SOCIAL" + ("  (%d)" % n if n > 0 else "")
 
 ## a friend invites us: popup anywhere in the menus (ignored during a match: it expires after 2 min)
@@ -244,7 +250,7 @@ func _on_invite(inv: Dictionary) -> void:
 	var av: String = String(inv.from.avatar) if DB.BY_ID.has(String(inv.from.avatar)) else "vex"
 	h.add_child(Kit.tex_rect(Art.card(av), Vector2(80, 80)))
 	var tv := Kit.vbox(2)
-	tv.add_child(Kit.label(Social.tagname(inv.from), 26, Color(String(inv.from.color)), Kit.font_d))
+	tv.add_child(Kit.label(Kit.soc.tagname(inv.from), 26, Color(String(inv.from.color)), Kit.font_d))
 	tv.add_child(Kit.label("t'invite à un match en ligne !", 18, Kit.FG, Kit.font_c))
 	h.add_child(tv)
 	v.add_child(h)
@@ -253,14 +259,14 @@ func _on_invite(inv: Dictionary) -> void:
 	yes.custom_minimum_size.y = 56
 	yes.pressed.connect(func():
 		Kit.close_sheet(v)
-		Social.req("POST", "/v1/invite/answer", {"id": int(inv.id), "accept": true})
+		Kit.soc.req("POST", "/v1/invite/answer", {"id": int(inv.id), "accept": true})
 		var S = load("res://scripts/screens/setup.gd")
 		if S.lobby != "":
 			Net.close()
 		S.mode = "online"
 		S.ranked = {}
 		S.lobby = "joining"
-		S.status = "Connexion à la partie de %s…" % Social.tagname(inv.from)
+		S.status = "Connexion à la partie de %s…" % Kit.soc.tagname(inv.from)
 		if not Net.join(String(inv.code)):
 			S.lobby = ""
 			Kit.toast("Invitation invalide")
@@ -269,6 +275,6 @@ func _on_invite(inv: Dictionary) -> void:
 	var no := Kit.button("Plus tard", "ghost", 16)
 	no.pressed.connect(func():
 		Kit.close_sheet(v)
-		Social.req("POST", "/v1/invite/answer", {"id": int(inv.id), "accept": false}))
+		Kit.soc.req("POST", "/v1/invite/answer", {"id": int(inv.id), "accept": false}))
 	row.add_child(no)
 	v.add_child(row)

@@ -89,6 +89,14 @@ jobs:
           sed -i 's/^ *//' ~/.config/godot/editor_settings-${minor}.tres
           cat ~/.config/godot/editor_settings-${minor}.tres
 
+      - name: Verifier la compatibilite des mises a jour
+        shell: bash
+        run: |
+          # the autoload list is read from the installed APK: a pack that changes it breaks old installs.
+          # Changing it requires updating godot/autoloads.lock AND raising godot/min_apk.txt.
+          sed -n '/^\[autoload\]/,/^\[/p' godot/project.godot | grep '=' > /tmp/autoloads.now
+          diff -u godot/autoloads.lock /tmp/autoloads.now
+
       - name: Deployer le serveur social (Cloudflare)
         if: env.HAS_CF == 'true'
         shell: bash
@@ -124,7 +132,7 @@ jobs:
           ~/godot --headless --path . --export-debug "Android" build/SkySpike-Godot.apk
           # resource pack for updates without reinstalling
           ~/godot --headless --path . --export-pack "Android" build/update.pck
-          printf '{"build": %s, "pck": "update.pck"}' "${{ github.run_number }}" > build/manifest.json
+          printf '{"build": %s, "pck": "update.pck", "min_apk": %s}' "${{ github.run_number }}" "$(cat min_apk.txt)" > build/manifest.json
           ls -la build
           test -s build/SkySpike-Godot.apk
           test -s build/update.pck

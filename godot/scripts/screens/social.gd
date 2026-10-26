@@ -26,15 +26,15 @@ func build() -> void:
 		c.queue_free()
 	_gen += 1
 	_chat_kind = ""
-	Social.active = true
+	Kit.soc.active = true
 	if not tree_exiting.is_connected(_bye):
 		tree_exiting.connect(_bye)
-		Social.hub_changed.connect(_nav_badges)
-		Social.me_changed.connect(func(): if is_inside_tree(): build.call_deferred())
-	if not Social.available():
+		Kit.soc.hub_changed.connect(_nav_badges)
+		Kit.soc.me_changed.connect(func(): if is_inside_tree(): build.call_deferred())
+	if not Kit.soc.available():
 		_center_msg("Le serveur social est en cours de mise en ligne.\nIl sera disponible avec une prochaine mise à jour automatique.")
 		return
-	if not Social.has_account():
+	if not Kit.soc.has_account():
 		_onboarding()
 		return
 	var row := Kit.hbox(18)
@@ -43,7 +43,7 @@ func build() -> void:
 	nav = Kit.vbox(6)
 	nav.custom_minimum_size.x = 190
 	row.add_child(nav)
-	var who := Kit.label(Social.tagname(Social.me), 15, Color(String(Social.me.get("color", "#ffd642"))), Kit.font_c)
+	var who := Kit.label(Kit.soc.tagname(Kit.soc.me), 15, Color(String(Kit.soc.me.get("color", "#ffd642"))), Kit.font_c)
 	who.clip_text = true
 	nav.add_child(who)
 	for s in SECTIONS:
@@ -66,7 +66,7 @@ func refresh() -> void:
 	pass
 
 func _bye() -> void:
-	Social.active = false
+	Kit.soc.active = false
 
 func _go(s: String) -> void:
 	Sfx.ui()
@@ -82,8 +82,8 @@ func _nav_badges() -> void:
 			continue
 		var n := 0
 		match String(b.get_meta("sec")):
-			"friends": n = int(Social.hub.get("requests", 0))
-			"messages": n = int(Social.hub.get("unread", 0))
+			"friends": n = int(Kit.soc.hub.get("requests", 0))
+			"messages": n = int(Kit.soc.hub.get("unread", 0))
 		var base: String = ""
 		for s in SECTIONS:
 			if s[0] == b.get_meta("sec"):
@@ -122,7 +122,7 @@ func _stale(g: int) -> bool:
 	return g != _gen or not is_inside_tree()
 
 func _ago(ts) -> String:
-	var t := int(Social.hub.get("server_time", int(Time.get_unix_time_from_system())))
+	var t := int(Kit.soc.hub.get("server_time", int(Time.get_unix_time_from_system())))
 	var s: int = maxi(0, t - int(ts))
 	if s < 60: return "à l'instant"
 	if s < 3600: return "il y a %d min" % (s / 60)
@@ -174,7 +174,7 @@ func _user_row(u: Dictionary, actions: Array = [], extra := "") -> Control:
 	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	v.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var top := ("[%s] " % u.club_tag if u.get("club_tag") else "") + Social.tagname(u)
+	var top: String = ("[%s] " % u.club_tag if u.get("club_tag") else "") + Kit.soc.tagname(u)
 	var nl := Kit.label(top, 17, Color(String(u.get("color", "#ffffff"))), Kit.font_c)
 	nl.clip_text = true
 	v.add_child(nl)
@@ -244,13 +244,13 @@ func _onboarding() -> void:
 	go.custom_minimum_size.y = 60
 	go.pressed.connect(func():
 		go.disabled = true
-		var r := await Social.register(name_in.text.strip_edges(), pick[0])
+		var r: Dictionary = await Kit.soc.register(name_in.text.strip_edges(), pick[0])
 		if is_instance_valid(go):
 			go.disabled = false
 		if not _err(r):
 			Save.S.settings.name = String(r.me.name)
 			Save.save()
-			Kit.toast("Bienvenue %s !" % Social.tagname(r.me))
+			Kit.toast("Bienvenue %s !" % Kit.soc.tagname(r.me))
 			section = "profile"
 			build())
 	v.add_child(go)
@@ -263,9 +263,9 @@ func _onboarding() -> void:
 	hr.add_child(code_in)
 	var lg := Kit.button("Récupérer", "base", 16)
 	lg.pressed.connect(func():
-		var r := await Social.login(code_in.text)
+		var r: Dictionary = await Kit.soc.login(code_in.text)
 		if not _err(r):
-			Kit.toast("Compte récupéré : " + Social.tagname(r.me))
+			Kit.toast("Compte récupéré : " + Kit.soc.tagname(r.me))
 			build())
 	hr.add_child(lg)
 	v.add_child(hr)
@@ -285,11 +285,11 @@ func _show(s: String) -> void:
 # ---- my profile
 func _profile() -> void:
 	var g := _gen
-	var d := await Social.req("GET", "/v1/me")
+	var d: Dictionary = await Kit.soc.req("GET", "/v1/me")
 	if _stale(g) or _err(d):
 		return
 	var me: Dictionary = d.me
-	Social.me = me
+	Kit.soc.me = me
 	var sv := _scroll()
 	body.add_child(sv[0])
 	var v: VBoxContainer = sv[1]
@@ -297,7 +297,7 @@ func _profile() -> void:
 	top.add_child(_avatar(String(me.avatar), 128))
 	var info := Kit.vbox(4)
 	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	info.add_child(Kit.label(Social.tagname(me), 34, Color(String(me.color)), Kit.font_d))
+	info.add_child(Kit.label(Kit.soc.tagname(me), 34, Color(String(me.color)), Kit.font_d))
 	var club_txt: String = ("Club %s [%s]" % [me.club.name, me.club.tag]) if me.get("club") else "Sans club"
 	info.add_child(Kit.label("Niveau %d · %s %d · %s" % [int(me.level), me.tier, int(me.elo), club_txt], 16, Kit.FG, Kit.font_c))
 	# xp bar
@@ -320,7 +320,7 @@ func _profile() -> void:
 	bio.max_length = 120
 	bio.custom_minimum_size.y = 42
 	bio.text_submitted.connect(func(t): _save_me({"bio": t}))
-	bio.focus_exited.connect(func(): if bio.text != String(Social.me.get("bio", "")): _save_me({"bio": bio.text}))
+	bio.focus_exited.connect(func(): if bio.text != String(Kit.soc.me.get("bio", "")): _save_me({"bio": bio.text}))
 	info.add_child(bio)
 	top.add_child(info)
 	v.add_child(top)
@@ -372,7 +372,7 @@ func _profile() -> void:
 		sh.add_child(tv)
 	v.add_child(sh)
 	v.add_child(_section_title("DERNIERS MATCHS CLASSÉS"))
-	var hist := await Social.req("GET", "/v1/matches")
+	var hist: Dictionary = await Kit.soc.req("GET", "/v1/matches")
 	if _stale(g):
 		return
 	if hist.get("matches", []).is_empty():
@@ -387,13 +387,13 @@ func _profile() -> void:
 	acc.add_child(tr)
 	var cp := Kit.button("Copier mon pseudo#tag", "ghost", 15)
 	cp.pressed.connect(func():
-		DisplayServer.clipboard_set(Social.tagname(Social.me))
-		Kit.toast("Copié : " + Social.tagname(Social.me)))
+		DisplayServer.clipboard_set(Kit.soc.tagname(Kit.soc.me))
+		Kit.toast("Copié : " + Kit.soc.tagname(Kit.soc.me)))
 	acc.add_child(cp)
 	v.add_child(acc)
 
 func _save_me(f: Dictionary) -> void:
-	var d := await Social.update_me(f)
+	var d: Dictionary = await Kit.soc.update_me(f)
 	if not _err(d):
 		Kit.toast("Profil mis à jour")
 
@@ -430,7 +430,7 @@ func _transfer_sheet() -> void:
 	w.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	v.add_child(w)
 	var code := LineEdit.new()
-	code.text = Social.token
+	code.text = Kit.soc.token
 	code.editable = false
 	code.secret = true
 	code.custom_minimum_size.y = 44
@@ -441,7 +441,7 @@ func _transfer_sheet() -> void:
 	h.add_child(show)
 	var cp := Kit.button("Copier", "primary", 16)
 	cp.pressed.connect(func():
-		DisplayServer.clipboard_set(Social.token)
+		DisplayServer.clipboard_set(Kit.soc.token)
 		Kit.toast("Code copié"))
 	h.add_child(cp)
 	h.add_child(Kit.spacer())
@@ -462,7 +462,7 @@ func _friends() -> void:
 	var go := Kit.button("Chercher", "primary", 16)
 	sr.add_child(go)
 	body.add_child(sr)
-	body.add_child(Kit.label("Ton pseudo à partager : " + Social.tagname(Social.me), 13, Kit.MUTED, Kit.font_c))
+	body.add_child(Kit.label("Ton pseudo à partager : " + Kit.soc.tagname(Kit.soc.me), 13, Kit.MUTED, Kit.font_c))
 	var sv := _scroll()
 	body.add_child(sv[0])
 	var v: VBoxContainer = sv[1]
@@ -471,7 +471,7 @@ func _friends() -> void:
 	var search := func(_t = ""):
 		for c in results.get_children():
 			c.queue_free()
-		var d := await Social.req("GET", "/v1/search?q=" + q.text.strip_edges().uri_encode())
+		var d: Dictionary = await Kit.soc.req("GET", "/v1/search?q=" + q.text.strip_edges().uri_encode())
 		if _stale(g) or _err(d):
 			return
 		if d.users.is_empty():
@@ -481,7 +481,7 @@ func _friends() -> void:
 			results.add_child(_user_row(u, [["Ajouter", "primary", func(): _add_friend(uid)]]))
 	go.pressed.connect(search)
 	q.text_submitted.connect(search)
-	var d := await Social.req("GET", "/v1/friends")
+	var d: Dictionary = await Kit.soc.req("GET", "/v1/friends")
 	if _stale(g) or _err(d):
 		return
 	if not d.incoming.is_empty():
@@ -510,22 +510,22 @@ func _friends() -> void:
 			v.add_child(_user_row(u, [["Débloquer", "ghost", func(): _unblock(uid)]]))
 
 func _add_friend(id: int) -> void:
-	var d := await Social.req("POST", "/v1/friends/add", {"id": id})
+	var d: Dictionary = await Kit.soc.req("POST", "/v1/friends/add", {"id": id})
 	if not _err(d):
 		Kit.toast("Vous êtes amis !" if d.status == "friend" else "Demande envoyée")
 		if section == "friends":
 			_show("friends")
 func _answer(id: int, ok: bool) -> void:
-	var d := await Social.req("POST", "/v1/friends/accept" if ok else "/v1/friends/decline", {"id": id})
+	var d: Dictionary = await Kit.soc.req("POST", "/v1/friends/accept" if ok else "/v1/friends/decline", {"id": id})
 	if not _err(d):
-		Social.ping_now()
+		Kit.soc.ping_now()
 		_show("friends")
 func _remove(id: int) -> void:
-	var d := await Social.req("POST", "/v1/friends/remove", {"id": id})
+	var d: Dictionary = await Kit.soc.req("POST", "/v1/friends/remove", {"id": id})
 	if not _err(d) and section == "friends":
 		_show("friends")
 func _unblock(id: int) -> void:
-	var d := await Social.req("POST", "/v1/unblock", {"id": id})
+	var d: Dictionary = await Kit.soc.req("POST", "/v1/unblock", {"id": id})
 	if not _err(d):
 		_show("friends")
 
@@ -545,7 +545,7 @@ func _messages() -> void:
 		_dm_pane(dm_with)
 		return
 	var g := _gen
-	var d := await Social.req("GET", "/v1/conversations")
+	var d: Dictionary = await Kit.soc.req("GET", "/v1/conversations")
 	if _stale(g) or _err(d):
 		return
 	var sv := _scroll()
@@ -575,7 +575,7 @@ func _dm_pane(u: Dictionary) -> void:
 		_show("messages"))
 	head.add_child(back)
 	head.add_child(_avatar(String(u.get("avatar", "vex")), 40))
-	head.add_child(Kit.label(Social.tagname(u), 20, Color(String(u.get("color", "#ffffff"))), Kit.font_c))
+	head.add_child(Kit.label(Kit.soc.tagname(u), 20, Color(String(u.get("color", "#ffffff"))), Kit.font_c))
 	head.add_child(Kit.spacer())
 	var inv := Kit.button("Inviter à jouer", "cta", 15)
 	inv.pressed.connect(func(): invite_friend(app, u))
@@ -636,9 +636,9 @@ func _chat_ui(kind: String, quick: Array, parent: VBoxContainer = null) -> void:
 func _send(text: String) -> void:
 	var d: Dictionary
 	if _chat_kind == "dm":
-		d = await Social.req("POST", "/v1/messages", {"to": int(dm_with.id), "text": text})
+		d = await Kit.soc.req("POST", "/v1/messages", {"to": int(dm_with.id), "text": text})
 	else:
-		d = await Social.req("POST", "/v1/chat", {"room": _chat_kind, "text": text})
+		d = await Kit.soc.req("POST", "/v1/chat", {"room": _chat_kind, "text": text})
 	if not _err(d):
 		_pull_chat()
 
@@ -650,9 +650,9 @@ func _pull_chat() -> void:
 	var kind := _chat_kind
 	var d: Dictionary
 	if kind == "dm":
-		d = await Social.req("GET", "/v1/messages?with=%d&after=%d" % [int(dm_with.id), _chat_last])
+		d = await Kit.soc.req("GET", "/v1/messages?with=%d&after=%d" % [int(dm_with.id), _chat_last])
 	else:
-		d = await Social.req("GET", "/v1/chat?room=%s&after=%d" % [kind, _chat_last])
+		d = await Kit.soc.req("GET", "/v1/chat?room=%s&after=%d" % [kind, _chat_last])
 	_polling = false
 	if _stale(g) or kind != _chat_kind or d.has("error") or not is_instance_valid(_chat_box):
 		return
@@ -668,7 +668,7 @@ func _pull_chat() -> void:
 		_chat_last = maxi(_chat_last, int(m.id))
 		_chat_box.add_child(_chat_line(m, kind))
 	if kind == "dm":
-		Social.ping_now()
+		Kit.soc.ping_now()
 	await get_tree().process_frame
 	if is_instance_valid(_chat_scroll):
 		_chat_scroll.scroll_vertical = int(_chat_scroll.get_v_scroll_bar().max_value)
@@ -687,7 +687,7 @@ func _chat_line(m: Dictionary, kind: String) -> Control:
 		var uid := int(u.id)
 		av.pressed.connect(func(): open_profile(uid))
 		h.add_child(av)
-		var nm := ("[%s] " % u.club_tag if u.get("club_tag") else "") + Social.tagname(u) + "  ·  " + _ago(m.created)
+		var nm: String = ("[%s] " % u.club_tag if u.get("club_tag") else "") + Kit.soc.tagname(u) + "  ·  " + _ago(m.created)
 		bubble.add_child(Kit.label(nm, 13, Color(String(u.color)), Kit.font_c))
 	else:
 		bubble.add_child(Kit.label(("Toi" if mine else String(dm_with.get("name", ""))) + "  ·  " + _ago(m.created), 12, Kit.MUTED, Kit.font_c))
@@ -709,19 +709,19 @@ func _chat_line(m: Dictionary, kind: String) -> Control:
 # ---- club
 func _club() -> void:
 	var g := _gen
-	var me := await Social.req("GET", "/v1/me")
+	var me: Dictionary = await Kit.soc.req("GET", "/v1/me")
 	if _stale(g) or _err(me):
 		return
-	Social.me = me.me
+	Kit.soc.me = me.me
 	var cid = me.me.get("club_id")
 	if cid == null:
 		_club_browser()
 		return
-	var d := await Social.req("GET", "/v1/club?id=%d" % int(cid))
+	var d: Dictionary = await Kit.soc.req("GET", "/v1/club?id=%d" % int(cid))
 	if _stale(g) or _err(d):
 		return
 	var c: Dictionary = d.club
-	var mine_owner := int(c.owner) == int(Social.me.id)
+	var mine_owner := int(c.owner) == int(Kit.soc.me.id)
 	var head := Kit.hbox(12)
 	head.add_child(Kit.label("[%s]" % c.tag, 30, Color(String(c.color)), Kit.font_d))
 	var hv := Kit.vbox(0)
@@ -747,7 +747,7 @@ func _club() -> void:
 			var okb := Kit.button("Enregistrer", "primary", 16)
 			okb.pressed.connect(func():
 				Kit.close_sheet(v)
-				var r := await Social.req("POST", "/v1/club/edit", {"descr": de.text})
+				var r: Dictionary = await Kit.soc.req("POST", "/v1/club/edit", {"descr": de.text})
 				if not _err(r):
 					_show("club"))
 			hb.add_child(okb)
@@ -758,13 +758,13 @@ func _club() -> void:
 		head.add_child(ed)
 		var op := Kit.button("Fermer le club" if c.open else "Ouvrir le club", "ghost", 14)
 		op.pressed.connect(func():
-			var r := await Social.req("POST", "/v1/club/edit", {"open": not c.open})
+			var r: Dictionary = await Kit.soc.req("POST", "/v1/club/edit", {"open": not c.open})
 			if not _err(r):
 				_show("club"))
 		head.add_child(op)
 	var lv := Kit.button("Quitter", "ghost", 14)
 	lv.pressed.connect(func():
-		var r := await Social.req("POST", "/v1/club/leave", {})
+		var r: Dictionary = await Kit.soc.req("POST", "/v1/club/leave", {})
 		if not _err(r):
 			Kit.toast("Tu as quitté le club")
 			_show("club"))
@@ -779,10 +779,10 @@ func _club() -> void:
 	for m in d.members:
 		var mm: Dictionary = m
 		var acts := []
-		if mine_owner and int(mm.id) != int(Social.me.id):
+		if mine_owner and int(mm.id) != int(Kit.soc.me.id):
 			var mid := int(mm.id)
 			acts.append(["Exclure", "ghost", func():
-				var r := await Social.req("POST", "/v1/club/kick", {"id": mid})
+				var r: Dictionary = await Kit.soc.req("POST", "/v1/club/kick", {"id": mid})
 				if not _err(r):
 					_show("club")])
 		left[1].add_child(_user_row(mm, acts, "CHEF" if mm.owner else "%d V" % int(mm.wins)))
@@ -815,7 +815,7 @@ func _club_browser() -> void:
 	mk.add_child(ds)
 	var cr := Kit.button("Créer", "cta", 18)
 	cr.pressed.connect(func():
-		var r := await Social.req("POST", "/v1/clubs", {"name": nm.text, "tag": tg.text, "descr": ds.text, "color": Social.me.get("color", "#4fc3ff")})
+		var r: Dictionary = await Kit.soc.req("POST", "/v1/clubs", {"name": nm.text, "tag": tg.text, "descr": ds.text, "color": Kit.soc.me.get("color", "#4fc3ff")})
 		if not _err(r):
 			Kit.toast("Club créé !")
 			_show("club"))
@@ -834,7 +834,7 @@ func _club_browser() -> void:
 	body.add_child(sv[0])
 	var list: VBoxContainer = sv[1]
 	var load_list := func(_t = ""):
-		var d := await Social.req("GET", "/v1/clubs?q=" + q.text.strip_edges().uri_encode())
+		var d: Dictionary = await Kit.soc.req("GET", "/v1/clubs?q=" + q.text.strip_edges().uri_encode())
 		if _stale(g) or _err(d):
 			return
 		for ch in list.get_children():
@@ -853,7 +853,7 @@ func _club_browser() -> void:
 				var cid := int(c.id)
 				var jb := Kit.button("Rejoindre", "primary", 15)
 				jb.pressed.connect(func():
-					var r := await Social.req("POST", "/v1/club/join", {"id": cid})
+					var r: Dictionary = await Kit.soc.req("POST", "/v1/club/join", {"id": cid})
 					if not _err(r):
 						Kit.toast("Bienvenue au club !")
 						_show("club"))
@@ -876,7 +876,7 @@ func _ranks(scope: String) -> void:
 			_ranks(ss))
 		tabs.add_child(b)
 	body.add_child(tabs)
-	var d := await Social.req("GET", "/v1/leaderboard?scope=" + scope)
+	var d: Dictionary = await Kit.soc.req("GET", "/v1/leaderboard?scope=" + scope)
 	if _stale(g) or _err(d):
 		return
 	if d.has("my_rank") and scope != "friends":
@@ -937,7 +937,7 @@ func _feed() -> void:
 	var g := _gen
 	body.add_child(Kit.title("Fil d'actu"))
 	body.add_child(Kit.label("Les exploits de tes amis, de ton club et les tiens.", 13, Kit.MUTED))
-	var d := await Social.req("GET", "/v1/feed")
+	var d: Dictionary = await Kit.soc.req("GET", "/v1/feed")
 	if _stale(g) or _err(d):
 		return
 	var sv := _scroll()
@@ -958,7 +958,7 @@ func _feed() -> void:
 		h.add_child(av)
 		var tv := Kit.vbox(0)
 		tv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		tv.add_child(Kit.label(Social.tagname(u) + "  ·  " + _ago(e.created), 13, Color(String(u.color)), Kit.font_c))
+		tv.add_child(Kit.label(Kit.soc.tagname(u) + "  ·  " + _ago(e.created), 13, Color(String(u.color)), Kit.font_c))
 		var tl := Kit.label(feed_text(e), 17, Color.WHITE, Kit.font_c)
 		tl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		tv.add_child(tl)
@@ -972,14 +972,14 @@ func _feed() -> void:
 				return
 			liked = true
 			lk.text = "GG  %d" % (n + 1)
-			Social.req("POST", "/v1/like", {"id": eid}))
+			Kit.soc.req("POST", "/v1/like", {"id": eid}))
 		h.add_child(lk)
 		v.add_child(Kit.panel(h, Color(1, 1, 1, 0.05)))
 
 # ---------------------------------------------------------------- someone's profile (sheet)
 func open_profile(id: int) -> void:
 	Sfx.ui()
-	var d := await Social.req("GET", "/v1/user?id=%d" % id)
+	var d: Dictionary = await Kit.soc.req("GET", "/v1/user?id=%d" % id)
 	if _err(d) or not is_inside_tree():
 		return
 	var u: Dictionary = d.user
@@ -989,7 +989,7 @@ func open_profile(id: int) -> void:
 	top.add_child(_avatar(String(u.avatar), 110))
 	var info := Kit.vbox(2)
 	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	info.add_child(Kit.label(Social.tagname(u), 30, Color(String(u.color)), Kit.font_d))
+	info.add_child(Kit.label(Kit.soc.tagname(u), 30, Color(String(u.color)), Kit.font_d))
 	var st := _status(u)
 	info.add_child(Kit.label("Niveau %d · %s %d%s · %s" % [int(u.level), u.tier, int(u.elo), (" · #%d" % int(d.rank)) if d.rank != null else "", st[0]], 15, st[1], Kit.font_c))
 	if u.get("club"):
@@ -1048,7 +1048,7 @@ func open_profile(id: int) -> void:
 	if rel != "me" and rel != "blocked":
 		add.call("Bloquer", "ghost", func():
 			close_it.call()
-			var r := await Social.req("POST", "/v1/block", {"id": int(u.id)})
+			var r: Dictionary = await Kit.soc.req("POST", "/v1/block", {"id": int(u.id)})
 			if not _err(r):
 				Kit.toast("Joueur bloqué : tu ne verras plus ses messages")
 				build())
@@ -1059,14 +1059,14 @@ func open_profile(id: int) -> void:
 
 func _report_sheet(u: Dictionary) -> void:
 	var v := Kit.sheet(560)
-	v.add_child(Kit.title("Signaler " + Social.tagname(u)))
+	v.add_child(Kit.title("Signaler " + Kit.soc.tagname(u)))
 	for r in ["Insultes / harcèlement", "Pseudo ou bio inappropriés", "Triche", "Spam"]:
 		var rr: String = r
 		var b := Kit.button(rr, "base", 17)
 		b.custom_minimum_size.y = 48
 		b.pressed.connect(func():
 			Kit.close_sheet(v)
-			var d := await Social.req("POST", "/v1/report", {"id": int(u.id), "reason": rr})
+			var d: Dictionary = await Kit.soc.req("POST", "/v1/report", {"id": int(u.id), "reason": rr})
 			if not _err(d):
 				Kit.toast("Merci, signalement envoyé"))
 		v.add_child(b)
