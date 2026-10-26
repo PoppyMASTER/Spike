@@ -42,9 +42,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -s index.html
+          SRC=index.html
+          [ -s "$SRC" ] || SRC=Filet-Libre-index.html
+          test -s "$SRC"
           mkdir -p www
-          cp index.html www/index.html
+          cp "$SRC" www/index.html
 
           cat > package.json <<'PACKAGE'
           {
@@ -75,6 +77,10 @@ jobs:
           npm install --no-audit --no-fund
           npx cap add android
           npx cap sync android
+
+          # Jeu en paysage plein ecran
+          sed -i 's/<activity /<activity android:screenOrientation="sensorLandscape" /' android/app/src/main/AndroidManifest.xml
+          grep -q sensorLandscape android/app/src/main/AndroidManifest.xml
 
       - name: Compiler APK Android
         shell: bash
