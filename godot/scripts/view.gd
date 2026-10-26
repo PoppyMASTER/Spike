@@ -13,6 +13,12 @@ const TEAMC := {
 	"R": {"jer": Color("3fb9da"), "jer2": Color("22718f"), "sh": Color("0f2a3a"), "sock": Color("f4f4f0"), "glow": Color(0.35, 0.81, 0.91)}}
 
 var g: Node      # game
+var stage := "arena"
+const STAGES := {
+	"arena": {"ground": ["141d2b", "0a0f17"], "court": ["226474", "1a4a59"], "line": "e9f2f2"},
+	"beach": {"ground": ["e6bd7f", "c99a5a"], "court": ["efcb8f", "e2b878"], "line": "2f6fd6"},
+	"gym": {"ground": ["b9773f", "94592a"], "court": ["d79a5c", "c98a4f"], "line": "fbf4e8"},
+	"forest": {"ground": ["93a5c4", "62718f"], "court": ["b6c4dc", "a6b5d0"], "line": "ffffff"}}
 var W := 1280.0
 var H := 720.0
 var K := 75.0
@@ -133,6 +139,16 @@ func _build_arena() -> void:
 var arena_size := Vector2.ONE
 
 func _paint_arena(ci: CanvasItem, cw: int, ch: int) -> void:
+	match stage:
+		"beach":
+			_paint_beach(ci, cw, ch)
+			return
+		"gym":
+			_paint_gym(ci, cw, ch)
+			return
+		"forest":
+			_paint_forest(ci, cw, ch)
+			return
 	# night arena: gradient sky, roof truss, light rigs, two tiers of crowd
 	var top := Color("05070c")
 	var mid := Color("101826")
@@ -173,6 +189,131 @@ func _paint_arena(ci: CanvasItem, cw: int, ch: int) -> void:
 		ci.draw_rect(Rect2(0, t1 - 2, cw, 2), Color(0.35, 0.81, 0.91, 0.08))
 	ci.draw_rect(Rect2(0, ch * 0.92, cw, ch * 0.08), Color("0d1522"))
 
+
+# ---------------------------------------------------------------- themed backdrops
+static func _vgrad(ci: CanvasItem, r: Rect2, stops: Array) -> void:
+	# stops: [[t, Color], ...] vertical gradient
+	for i in range(stops.size() - 1):
+		var y0: float = r.position.y + r.size.y * stops[i][0]
+		var y1: float = r.position.y + r.size.y * stops[i + 1][0]
+		var a: Color = stops[i][1]
+		var b: Color = stops[i + 1][1]
+		ci.draw_polygon(PackedVector2Array([Vector2(r.position.x, y0), Vector2(r.end.x, y0), Vector2(r.end.x, y1), Vector2(r.position.x, y1)]), PackedColorArray([a, a, b, b]))
+
+func _palm(ci: CanvasItem, x: float, base: float, h: float, col: Color) -> void:
+	var trunk := PackedVector2Array()
+	for i in 9:
+		var t := i / 8.0
+		trunk.append(Vector2(x, base).lerp(Vector2(x + h * 0.12, base - h * 0.5), t).lerp(Vector2(x + h * 0.12, base - h * 0.5).lerp(Vector2(x + h * 0.05, base - h), t), t))
+	ci.draw_polyline(trunk, col, h * 0.05, true)
+	var top := Vector2(x + h * 0.05, base - h)
+	for i in 6:
+		var a := -PI * 0.95 + i * 0.38
+		var tip := top + Vector2(cos(a) * h * 0.5, sin(a) * h * 0.2 + h * 0.12)
+		var ctl := top + Vector2(cos(a) * h * 0.3, sin(a) * h * 0.3 - h * 0.08)
+		var leaf := PackedVector2Array()
+		for j in 9:
+			var t := j / 8.0
+			leaf.append(top.lerp(ctl, t).lerp(ctl.lerp(tip, t), t))
+		ci.draw_polyline(leaf, col, h * 0.035, true)
+
+func _trees(ci: CanvasItem, cw: float, base: float, h: float, col: Color, stp: float, rng: RandomNumberGenerator) -> void:
+	var x := -stp
+	while x < cw + stp:
+		var th := h * (0.6 + rng.randf() * 0.6)
+		var w := th * 0.38
+		var pts := PackedVector2Array([Vector2(x, base - th)])
+		for i in range(1, 5):
+			var y := base - th + th * i / 4.0
+			pts.append(Vector2(x + w * i / 4.0 * 1.1, y))
+			pts.append(Vector2(x + w * i / 4.0 * 0.55, y))
+		pts.append(Vector2(x + w * 0.12, base))
+		pts.append(Vector2(x - w * 0.12, base))
+		for i in range(4, 0, -1):
+			var y := base - th + th * i / 4.0
+			pts.append(Vector2(x - w * i / 4.0 * 0.55, y))
+			pts.append(Vector2(x - w * i / 4.0 * 1.1, y))
+		for poly in Geometry2D.decompose_polygon_in_convex(pts):
+			ci.draw_colored_polygon(poly, col)
+		x += stp * (0.6 + rng.randf() * 0.7)
+
+func _paint_beach(ci: CanvasItem, cw: int, ch: int) -> void:
+	var hz := ch * 0.8
+	_vgrad(ci, Rect2(0, 0, cw, hz), [[0.0, Color("24184a")], [0.45, Color("8a3a6b")], [0.8, Color("ff7a59")], [1.0, Color("ffc36b")]])
+	var sun := Vector2(cw * 0.5, hz - K * 0.6)
+	ci.draw_texture_rect(SOFT, Rect2(sun - Vector2(K * 6, K * 6), Vector2(K * 12, K * 12)), false, Color(1, 0.8, 0.55, 0.7))
+	ci.draw_circle(sun, K * 1.3, Color("ffe9b0"))
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 5
+	for i in 9:
+		var p := Vector2(rng.randf() * cw, rng.randf() * hz * 0.5)
+		var w := K * (2 + rng.randf() * 4)
+		ci.draw_texture_rect(DOT, Rect2(p - Vector2(w, K * 0.18), Vector2(w * 2, K * 0.36)), false, Color(1, 0.86, 0.78, 0.25))
+	var hills := PackedVector2Array([Vector2(0, hz)])
+	var x := 0.0
+	while x <= cw:
+		hills.append(Vector2(x, hz - K * (0.3 + rng.randf() * 0.9)))
+		x += K * 2
+	hills.append(Vector2(cw, hz))
+	ci.draw_colored_polygon(hills, Color("5b2d5e"))
+	_vgrad(ci, Rect2(0, hz, cw, ch - hz), [[0.0, Color("3b4f8f")], [1.0, Color("20305e")]])
+	for i in 40:
+		var y := hz + rng.randf() * (ch - hz)
+		var w := K * (0.3 + rng.randf() * 1.5) * (1.0 - absf(rng.randf() * cw - sun.x) / cw)
+		ci.draw_rect(Rect2(sun.x - w / 2 + (rng.randf() - 0.5) * K * 3, y, w, 2), Color(1, (190 + rng.randf() * 50) / 255.0, 0.55, 0.3 + rng.randf() * 0.4))
+	x = K * 2
+	while x < cw:
+		_palm(ci, x, ch, K * (2 + rng.randf() * 1.5), Color("3a1f40"))
+		x += K * (3 + rng.randf() * 4)
+
+func _paint_gym(ci: CanvasItem, cw: int, ch: int) -> void:
+	_vgrad(ci, Rect2(0, 0, cw, ch), [[0.0, Color("3a2418")], [0.55, Color("6a4128")], [1.0, Color("8a5a36")]])
+	var x := 0.0
+	while x < cw:
+		ci.draw_rect(Rect2(x, ch * 0.35, 2, ch * 0.65), Color(0, 0, 0, 0.18))
+		x += K * 0.5
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 9
+	x = K
+	while x < cw:
+		ci.draw_rect(Rect2(x, ch * 0.08, K * 3.2, ch * 0.22), Color("bfe3f2"))
+		for i in range(1, 4):
+			ci.draw_rect(Rect2(x + i * K * 0.8, ch * 0.08, 3, ch * 0.22), Color(0.12, 0.16, 0.2, 0.5))
+		ci.draw_rect(Rect2(x, ch * 0.19, K * 3.2, 3), Color(0.12, 0.16, 0.2, 0.5))
+		ci.draw_polygon(PackedVector2Array([Vector2(x, ch * 0.3), Vector2(x + K * 3.2, ch * 0.3), Vector2(x + K * 5, ch), Vector2(x + K * 1.5, ch)]),
+			PackedColorArray([Color(1, 0.94, 0.78, 0.18), Color(1, 0.94, 0.78, 0.18), Color(1, 0.94, 0.78, 0), Color(1, 0.94, 0.78, 0)]))
+		x += K * 5
+	var cols := [Color("ed4c56"), Color("ffcf3c"), Color("58cfe8"), Color("5cd18a")]
+	x = K * 3
+	while x < cw:
+		ci.draw_colored_polygon(PackedVector2Array([Vector2(x, ch * 0.34), Vector2(x + K * 1.6, ch * 0.34), Vector2(x + K * 1.6, ch * 0.5), Vector2(x + K * 0.8, ch * 0.46), Vector2(x, ch * 0.5)]), cols[rng.randi() % 4])
+		x += K * 7
+	for r in 5:
+		var y := ch * 0.6 + r * K * 0.38
+		ci.draw_rect(Rect2(0, y, cw, K * 0.34), Color("4a2f20") if r % 2 else Color("5a3a26"))
+		var xx := rng.randf() * K
+		while xx < cw:
+			if rng.randf() >= 0.5:
+				var c: Color = [Color("2b3a55"), Color("5a2a30"), Color("3a4a2a"), Color("d8c9b0")][rng.randi() % 4]
+				ci.draw_circle(Vector2(xx, y - K * 0.02), K * 0.11, c)
+				ci.draw_rect(Rect2(xx - K * 0.14, y + K * 0.06, K * 0.28, K * 0.24), c)
+			xx += K * (0.5 + rng.randf() * 0.6)
+	ci.draw_rect(Rect2(0, ch * 0.95, cw, ch * 0.05), Color("2a1a12"))
+
+func _paint_forest(ci: CanvasItem, cw: int, ch: int) -> void:
+	_vgrad(ci, Rect2(0, 0, cw, ch), [[0.0, Color("070b1e")], [0.7, Color("1c2a55")], [1.0, Color("2d3d6e")]])
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 21
+	for i in 120:
+		ci.draw_rect(Rect2(rng.randf() * cw, rng.randf() * ch * 0.5, 1.5, 1.5), Color(1, 1, 1, 0.3 + rng.randf() * 0.6))
+	var moon := Vector2(cw * 0.62, ch * 0.22)
+	ci.draw_texture_rect(SOFT, Rect2(moon - Vector2(K * 5, K * 5), Vector2(K * 10, K * 10)), false, Color(0.86, 0.9, 1, 0.5))
+	ci.draw_circle(moon, K * 0.9, Color("eef2ff"))
+	_trees(ci, cw, ch * 0.75, K * 5, Color("22305a"), K * 1.6, rng)
+	ci.draw_polygon(PackedVector2Array([Vector2(0, ch * 0.6), Vector2(cw, ch * 0.6), Vector2(cw, ch * 0.8), Vector2(0, ch * 0.8)]),
+		PackedColorArray([Color(0.55, 0.63, 0.82, 0), Color(0.55, 0.63, 0.82, 0), Color(0.55, 0.63, 0.82, 0.35), Color(0.55, 0.63, 0.82, 0.35)]))
+	_trees(ci, cw, ch * 0.92, K * 6.5, Color("18234a"), K * 2.2, rng)
+	_trees(ci, cw, ch * 1.02, K * 8, Color("111a38"), K * 3, rng)
 
 # ---------------------------------------------------------------- poses
 func cocked(p) -> bool:
@@ -497,12 +638,22 @@ func _draw_main() -> void:
 func draw_floor() -> void:
 	CZ = 1.5
 	var yb := Y(0)
+	var st: Dictionary = STAGES[stage]
+	var g0 := Color(st.ground[0])
+	var g1 := Color(st.ground[1])
 	draw_polygon(PackedVector2Array([Vector2(-W, yb), Vector2(W * 2, yb), Vector2(W * 2, H * 2), Vector2(-W, H * 2)]),
-		PackedColorArray([Color("141d2b"), Color("141d2b"), Color("0a0f17"), Color("0a0f17")]))
+		PackedColorArray([g0, g0, g1, g1]))
 	var c := PackedVector2Array([P(-9, 0, 0), P(9, 0, 0), P(9, 0, 1), P(-9, 0, 1)])
-	draw_polygon(c, PackedColorArray([Color("226474"), Color("226474"), Color("1a4a59"), Color("1a4a59")]))
+	var c0 := Color(st.court[1])
+	var c1 := Color(st.court[0])
+	draw_polygon(c, PackedColorArray([c0, c0, c1, c1]))
+	if stage == "gym":
+		var zz := 0.08
+		while zz < 1.0:
+			draw_line(P(-9, 0, zz), P(9, 0, zz), Color(0.24, 0.12, 0.04, 0.18), 1.0)
+			zz += 0.08
 	draw_colored_polygon(PackedVector2Array([P(-3, 0, 0), P(3, 0, 0), P(3, 0, 1), P(-3, 0, 1)]), Color(1, 1, 1, 0.035))
-	var lc := Color("e9f2f2")
+	var lc := Color(st.line)
 	for pr in [[-9, 0, 9, 0], [-9, 1, 9, 1], [-9, 0, -9, 1], [9, 0, 9, 1]]:
 		draw_line(P(pr[0], 0, pr[1]), P(pr[2], 0, pr[3]), lc, 3.0)
 	for x in [-3, 3, 0]:

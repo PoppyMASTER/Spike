@@ -15,6 +15,8 @@ signal score_changed
 signal match_over(winner: String)
 signal banner(side: String, who: String, reason: String)
 signal cutin(p)
+signal skill_fired(side: String, name: String)
+signal set_won(side: String)
 
 # ---------------------------------------------------------------- data types
 class Plr:
@@ -85,6 +87,7 @@ class Ball:
 	var net_t := -9.0
 	var last_atk: Plr = null
 	var atk_s := 0.0
+	var no_block := false
 	var trail: Array = []
 
 # ---------------------------------------------------------------- state
@@ -101,6 +104,9 @@ var serving := "L"
 var rot := {"L": 0, "R": 0}
 var score := {"L": 0, "R": 0}
 var target_pts := 15
+var target_sets := 1
+var sets := {"L": 0, "R": 0}
+var set_log: Array = []
 var over := false
 var rally_t := 0.0
 var serve_toss_t = null
@@ -146,9 +152,6 @@ var sfx: Node = null
 
 func _ready() -> void:
 	randomize()
-	var f := FileAccess.open("res://data/roster.json", FileAccess.READ)
-	for c in JSON.parse_string(f.get_as_text()):
-		roster[c.id] = c
 
 # ---------------------------------------------------------------- helpers
 static func sgn(s) -> float:
@@ -188,12 +191,12 @@ static func jump_sim(jv: float) -> Vector2:
 			break
 	return Vector2(tA, h)
 
-func mk_player(side: String, role: String, id: String) -> Plr:
+func mk_player(side: String, role: String, id: String, own: Dictionary) -> Plr:
 	var p := Plr.new()
 	p.side = side
 	p.role = role
-	p.c = roster[id]
-	p.st = p.c.st
+	p.c = DB.BY_ID[id]
+	p.st = DB.eff_stats(id, own)
 	p.f = 1.0 if side == "L" else -1.0
 	p.jh = 1.45 + 0.75 * (1.0 - exp(-float(p.st.saut) / 110.0)) + trait_v(p, "reach")
 	p.jv = sqrt(2.0 * GP * p.jh)
@@ -207,13 +210,20 @@ func mk_player(side: String, role: String, id: String) -> Plr:
 	p.ult_kind = p.c.ultKind
 	return p
 
-func start_match(team_l: Array, team_r: Array, human_role: String) -> void:
+## team_l / team_r: {SPK|SET|DEF: {id, own}}; diff: 0..3; fmt: {sets, pts}
+func start_match(team_l: Dictionary, team_r: Dictionary, human_role: String, diff := 2, fmt := {"sets": 1, "pts": 15}) -> void:
 	t = {"L": {}, "R": {}}
-	var roles := ["SPK", "SET", "DEF"]
-	for i in 3:
-		t.L[roles[i]] = mk_player("L", roles[i], team_l[i])
-		t.R[roles[i]] = mk_player("R", roles[i], team_r[i])
+	for r in ["SPK", "SET", "DEF"]:
+		t.L[r] = mk_player("L", r, team_l[r].id, team_l[r].own)
+		t.R[r] = mk_player("R", r, team_r[r].id, team_r[r].own)
 	players = t.L.values() + t.R.values()
+	diff_skill = float(DB.D.DIFFS[diff].skill)
+	ally_skill = 0.62 + 0.08 * mini(3, diff)
+	target_pts = int(fmt.pts)
+	target_sets = int(fmt.sets)
+	sets = {"L": 0, "R": 0}
+	set_log = []
+	sk_init()
 	human = t.L[human_role] if human_role != "NONE" else null
 	if human:
 		human.human = true
@@ -227,6 +237,43 @@ func start_match(team_l: Array, team_r: Array, human_role: String) -> void:
 	new_point("L")
 	paused = false
 	score_changed.emit()
+
+# ---------------------------------------------------------------- active skills
+# One attack and one defence skill equipped per side; each fires automatically at the right moment
+# (good timing, block, hard dig, opponent attack) then recharges over 4 points.
+const SKCD := 4
+const SKILL_NAMES := {"full": "Smash total", "intim": "Intimidation", "fortune": "Coup parfait", "wall": "Mur de glace", "over": "Surrégime", "read": "Lecture"}
+var sk := {}
+var eq := {"L": {"atk": "full", "def": "wall"}, "R": {"atk": "full", "def": "wall"}}
+var over_t := {"L": -9.0, "R": -9.0}
+static func sk_cat(id: String) -> String:
+	return "atk" if id in ["full", "intim", "fortune"] else "def"
+func sk_init() -> void:
+	sk = {"L": {}, "R": {}}
+	for s in ["L", "R"]:
+		for id in SKILL_NAMES:
+			sk[s][id] = 0
+	eq.R = {"atk": ["full", "intim", "fortune"].pick_random(), "def": ["wall", "over", "read"].pick_random()}
+	over_t = {"L": -9.0, "R": -9.0}
+func sk_armed(side: String, id: String) -> bool:
+	return eq[side][sk_cat(id)] == id and sk[side][id] == 0
+func sk_consume(side: String, id: String, ok := true) -> bool:
+	if not ok or not sk_armed(side, id):
+		return false
+	sk[side][id] = SKCD
+	skill_fired.emit(side, SKILL_NAMES[id])
+	play("ult", 0.6)
+	for r in ["SPK", "SET", "DEF"]:
+		var p: Plr = t[side][r]
+		burst(p.x, 0.9, 6, Color(1, 0.81, 0.24) if side == "L" else Color(0.35, 0.81, 0.91), 2.0, p.z)
+	return true
+func sk_tick_point() -> void:
+	for s in ["L", "R"]:
+		for id in sk[s]:
+			if sk[s][id] > 0:
+				sk[s][id] -= 1
+	if randf() < 0.15:
+		eq.R = {"atk": ["full", "intim", "fortune"].pick_random(), "def": ["wall", "over", "read"].pick_random()}
 
 # ---------------------------------------------------------------- feel helpers
 func pop(text: String, x: float, y: float, col := Color(0.96, 0.93, 0.86), size := 1.0) -> void:
@@ -315,6 +362,7 @@ func score_point(w: String, reason: String, credit: Plr = null) -> void:
 		k += 0.4
 	play("crowd", k)
 	cel = w
+	sk_tick_point()
 	score_changed.emit()
 	banner.emit(w, credit.c.name.split(" ")[0] if credit else "", reason.trim_suffix(" !"))
 
@@ -322,9 +370,20 @@ func after_dead() -> void:
 	var w := serving
 	var l := other(w)
 	if score[w] >= target_pts and score[w] - score[l] >= 2:
-		over = true
-		state = "over"
-		match_over.emit(w)
+		sets[w] += 1
+		set_log.append("%d-%d" % [score.L, score.R])
+		if sets[w] >= target_sets:
+			over = true
+			state = "over"
+			match_over.emit(w)
+			return
+		set_won.emit(w)
+		pop("SET !", cam_x, 5.3, Color("ffc93c"), 1.6)
+		score = {"L": 0, "R": 0}
+		serving = l
+		score_changed.emit()
+		state = "pause"
+		state_t = gt
 		return
 	new_point(serving)
 
@@ -382,7 +441,7 @@ func register_touch(p: Plr, kind: String) -> bool:
 	if b.count > 3:
 		score_point(other(p.side), "4 TOUCHES")
 		return false
-	b.last_player = p; b.last_side = p.side; b.kind = kind; b.plan = null; b.ult = false; b.stuff = false
+	b.last_player = p; b.last_side = p.side; b.kind = kind; b.plan = null; b.ult = false; b.stuff = false; b.no_block = false
 	new_path()
 	trail_col = [Color(1, 0.94, 0.78), Color(1, 1, 1)]; trail_hot = false
 	b.z = p.z; b.touch_t = gt; b.hit_t = gt
@@ -422,6 +481,7 @@ func do_receive(p: Plr, q: float, overhead: bool) -> void:
 	if not register_touch(p, "pass" if overhead else "bump"):
 		return
 	var ult := use_ult(p, "dig")
+	var read_sk := hard and sk_consume(p.side, "read")
 	var def := float(p.st.def) * (1.0 + trait_v(p, "dig")) * (0.85 if p.dive > gt else 1.0)
 	var moving := absf(p.vx) > 1.2 and p.dive < gt
 	var ctrl: float
@@ -433,6 +493,8 @@ func do_receive(p: Plr, q: float, overhead: bool) -> void:
 		ctrl = clampf(0.45 * q + 0.55 * (def / (def + inc * 2.5)), 0.05, 1.0)
 	if moving and not ult:
 		ctrl *= 0.82
+	if read_sk:
+		ctrl = maxf(ctrl, 0.9)
 	if overhead and not ult:
 		ctrl = clampf(ctrl * 0.9 + 0.1 * (float(p.st.passe) / (float(p.st.passe) + 60.0)), 0.0, 1.0)
 	if was_attack:
@@ -532,6 +594,12 @@ func do_spike(p: Plr, q: float, dir: float, feint: bool) -> void:
 	var set_q: float = plan.setQ if plan else 0.5
 	if plan and plan.ult:
 		q = 1.0
+	if sk_consume(p.side, "fortune", q >= 0.35 and q < 1.0):
+		q = 1.0
+	var full := sk_consume(p.side, "full", q >= 0.72)
+	var no_block := sk_consume(p.side, "intim", q >= 0.6)
+	if sk_consume(other(p.side), "over"):
+		over_t[other(p.side)] = gt + 2.5
 	if not is_human(p):
 		var opp: Dictionary = t[other(p.side)]
 		var zones := [{"d": 1.0, "x": -s * 7.6}, {"d": 0.0, "x": -s * 5.2}, {"d": -1.0, "x": -s * 2.8}]
@@ -559,7 +627,7 @@ func do_spike(p: Plr, q: float, dir: float, feint: bool) -> void:
 			feint = false
 	var ult := (not feint) and use_ult(p, "atk")
 	var perfect := q >= 0.97
-	var pw := float(p.st.atk) * (0.5 + 0.5 * q) * (0.8 + 0.2 * set_q) * (1.0 + trait_v(p, "pow")) * ((1.0 + trait_v(p, "perfectPow")) if perfect else 1.0) * (1.5 if ult else 1.0)
+	var pw := float(p.st.atk) * (0.5 + 0.5 * q) * (0.8 + 0.2 * set_q) * (1.0 + trait_v(p, "pow")) * ((1.0 + trait_v(p, "perfectPow")) if perfect else 1.0) * (1.5 if ult else 1.0) * (1.4 if full else 1.0)
 	gain_ult(p, q)
 	set_pose(p, "spike", 0.3)
 	if feint:
@@ -575,11 +643,11 @@ func do_spike(p: Plr, q: float, dir: float, feint: bool) -> void:
 	var x1 := -s * clampf(5.3 + 3.2 * dir + randf_range(-0.5, 0.5), 2.0, 8.8)
 	if q < 0.45:
 		x1 += -s * randf_range(-1.2, 2.6) * (0.45 - q) * 3.0
-	var speed := 30.0 + 15.0 * (1.0 - exp(-pw / 120.0)) + (6.0 if ult else 0.0)
+	var speed := 30.0 + 15.0 * (1.0 - exp(-pw / 120.0)) + (6.0 if ult else 0.0) + (5.0 if full else 0.0)
 	launch_t(x1, 0, Vector2(x1 - b.x, b.y).length() / speed)
 	if b.y > NET + 0.25:
 		clear_net(0.24)
-	b.kind = "spike"; b.power = pw; b.ult = ult; b.last_atk = p
+	b.kind = "spike"; b.power = pw; b.ult = ult; b.last_atk = p; b.no_block = no_block
 	b.atk_s = (float(p.st.atk) + float(p.st.saut)) / 2.0 * (0.6 + 0.4 * q) * (1.5 if ult else 1.0)
 	hitstop = 0.1 if (perfect or ult) else 0.0
 	shake = 9.0 if (perfect or ult) else 4.0
@@ -609,8 +677,11 @@ func do_serve(p: Plr, q: float, dir: float, jumped: bool) -> void:
 	p.last_touch_t = gt
 	state = "live"; rally_t = gt
 	new_path()
+	if sk_consume(p.side, "fortune", q >= 0.35 and q < 1.0):
+		q = 1.0
+	var full := sk_consume(p.side, "full", q >= 0.72)
 	var ult := use_ult(p, "atk")
-	var pw := float(p.st.atk) * (0.45 + 0.55 * q) * (1.0 + trait_v(p, "serve")) * (1.15 if jumped else 1.0) * (1.45 if ult else 1.0)
+	var pw := float(p.st.atk) * (1.35 if full else 1.0) * (0.45 + 0.55 * q) * (1.0 + trait_v(p, "serve")) * (1.15 if jumped else 1.0) * (1.45 if ult else 1.0)
 	if not is_human(p):
 		dir = [1.0, 0.0, 0.0, -1.0].pick_random()
 	set_pose(p, "spike", 0.3)
@@ -621,7 +692,7 @@ func do_serve(p: Plr, q: float, dir: float, jumped: bool) -> void:
 		play("bump")
 		return
 	var x1 := -s * clampf(5.5 + 2.8 * dir + randf_range(-0.6, 0.6), 2.6, 8.7)
-	var speed := (14.0 if jumped else 9.5) + 10.0 * (1.0 - exp(-pw / 160.0)) + (4.0 if ult else 0.0)
+	var speed := (14.0 if jumped else 9.5) + 10.0 * (1.0 - exp(-pw / 160.0)) + (4.0 if ult else 0.0) + (3.0 if full else 0.0)
 	launch_t(x1, 0, Vector2(x1 - b.x, b.y).length() / speed)
 	clear_net(0.15 if jumped else 0.3)
 	b.kind = "serve"; b.power = pw; b.ult = ult; b.last_atk = p
@@ -778,7 +849,7 @@ func move_player(p: Plr, dir: float, dt: float, is_h: bool) -> void:
 	elif p.recover > gt and p.ground:
 		p.vx = 0.0
 	else:
-		var target := dir * p.spd
+		var target := dir * p.spd * (1.35 if over_t[p.side] > gt else 1.0)
 		if p.ground:
 			var acc := 48.0
 			p.vx += clampf(target - p.vx, -acc * dt, acc * dt)
@@ -890,7 +961,7 @@ func ai_team(side: String, dt: float) -> void:
 					best = nb
 				if assign[side] != best or mis_t != b.hit_t:
 					mis_t = b.hit_t
-					mis = (1.0 - ai_skill_of(best)) * randf_range(-1, 1) * 1.6 if (b.kind == "spike" or b.kind == "serve") else 0.0
+					mis = (1.0 - ai_skill_of(best)) * randf_range(-1, 1) * 1.6 if ((b.kind == "spike" or b.kind == "serve") and not sk_armed(side, "read")) else 0.0
 				assign[side] = best
 				rp = best; mode = "rec"
 				resp_tx = pr.y - best.f * 0.22 + (0.0 if is_human(best) else mis)
@@ -988,7 +1059,7 @@ func ai_team(side: String, dt: float) -> void:
 				p.block_plan = opp_plan
 				var err := (1.0 - ai_skill_of(p)) * 0.22 * (1.6 if opp_plan.choice == "quick" else 1.0)
 				p.block_at = opp_plan.tc + 0.04 + randf_range(-err, err)
-				if randf() > 0.55 + ai_skill_of(p) * 0.45:
+				if randf() > 0.55 + ai_skill_of(p) * 0.45 and not sk_armed(side, "wall"):
 					p.block_at = null
 			if p.block_at != null and p.ground and absf(p.x) < 1.3 and gt >= p.block_at - p.tAb:
 				do_jump(p, 0.92); set_pose(p, "block", 0.6); p.block_at = null
@@ -1019,7 +1090,7 @@ func ball_step(dt: float) -> void:
 			b.net_t = gt
 			play("net")
 		else:
-			if b.kind == "spike" and b.last_side == from:
+			if b.kind == "spike" and b.last_side == from and not b.no_block:
 				var D: Dictionary = t[to]
 				for r in ["DEF", "SPK", "SET"]:
 					var bl: Plr = D[r]
@@ -1032,7 +1103,8 @@ func ball_step(dt: float) -> void:
 						var wall := use_ult(bl, "block")
 						var bS := (float(bl.st.saut) + float(bl.st.def)) / 2.0 * (1.0 + trait_v(bl, "block")) * 0.85
 						var sS := b.atk_s if b.atk_s > 0 else b.power
-						var stf := clampf(0.03 + 0.32 * rel(bS, sS) + 0.13 * tq + trait_v(bl, "block") - (0.4 if b.ult else 0.0), 0.02, 0.5)
+						var wall_sk := sk_consume(to, "wall")
+						var stf := clampf(0.03 + 0.32 * rel(bS, sS) + 0.13 * tq + trait_v(bl, "block") - (0.4 if b.ult else 0.0) + (0.4 if wall_sk else 0.0), 0.02, 0.85 if wall_sk else 0.5)
 						if wall:
 							stf = 0.92
 						var r2 := randf()
@@ -1142,6 +1214,8 @@ func step(dt: float) -> void:
 				b.vy -= G * h; b.x += b.vx * h; b.y += b.vy * h
 				if b.y < BR:
 					b.y = BR; b.vy = absf(b.vy) * 0.45; b.vx *= 0.7
+	if state == "pause" and gt - state_t > 1.6:
+		new_point(serving)
 	if state == "dead" and gt - state_t > 1.5:
 		if replay:
 			replay = false

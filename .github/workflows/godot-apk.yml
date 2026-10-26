@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 env:
   GODOT_VERSION: 4.7.2
@@ -96,10 +96,16 @@ jobs:
           set -euo pipefail
           cd godot
           mkdir -p build
+          # build number = run number: the app compares it with the published pack
+          echo "${{ github.run_number }}" > build.txt
           ~/godot --headless --path . --import || true
           ~/godot --headless --path . --export-debug "Android" build/SkySpike-Godot.apk
+          # resource pack for updates without reinstalling
+          ~/godot --headless --path . --export-pack "Android" build/update.pck
+          printf '{"build": %s, "pck": "update.pck"}' "${{ github.run_number }}" > build/manifest.json
           ls -la build
           test -s build/SkySpike-Godot.apk
+          test -s build/update.pck
 
       - name: Publier l'APK
         uses: actions/upload-artifact@v7
@@ -109,3 +115,18 @@ jobs:
           archive: false
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publier la mise a jour (release godot-latest)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd godot/build
+          if ! gh release view godot-latest >/dev/null 2>&1; then
+            gh release create godot-latest --title "SkySpike Godot (derniere version)" \
+              --notes "Mise a jour automatique. L'appli telecharge update.pck toute seule ; SkySpike-Godot.apk sert seulement pour la premiere installation." --prerelease
+          fi
+          gh release upload godot-latest update.pck SkySpike-Godot.apk --clobber
+          # manifest last, so the app never sees a build number before its pack is online
+          gh release upload godot-latest manifest.json --clobber

@@ -4,11 +4,20 @@ config_version=5
 
 [application]
 
-config/name="SkySpike Proto"
+config/name="SkySpike"
 run/main_scene="res://main.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 boot_splash/bg_color=Color(0.03, 0.09, 0.22, 1)
 boot_splash/show_image=false
+
+[autoload]
+
+Updater="*res://scripts/updater.gd"
+DB="*res://scripts/db.gd"
+Save="*res://scripts/save.gd"
+Sfx="*res://scripts/sfx.gd"
+Kit="*res://scripts/kit.gd"
+Art="*res://scripts/art.gd"
 
 [display]
 
