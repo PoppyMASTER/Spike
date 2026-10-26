@@ -1,0 +1,88 @@
+name: Compiler Filet Libre en APK
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  creer-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Recuperer le jeu
+        uses: actions/checkout@v4
+
+      - name: Preparer Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Preparer Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Preparer Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Installer Android SDK 36
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+
+      - name: Creer le projet Android a partir du HTML
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s index.html
+          mkdir -p www
+          cp index.html www/index.html
+          cat > package.json <<'PACKAGE'
+          {
+            "name": "filet-libre",
+            "version": "1.0.0",
+            "private": true,
+            "description": "Jeu de volley 3v3 Filet Libre",
+            "dependencies": {
+              "@capacitor/core": "8.5.3",
+              "@capacitor/android": "8.5.3"
+            },
+            "devDependencies": {
+              "@capacitor/cli": "8.5.3"
+            }
+          }
+          PACKAGE
+          cat > capacitor.config.json <<'CONFIG'
+          {
+            "appId": "com.filetlibre.volley",
+            "appName": "Filet Libre",
+            "webDir": "www",
+            "android": {
+              "backgroundColor": "#0c1018"
+            }
+          }
+          CONFIG
+          npm install --no-audit --no-fund
+          npx cap add android
+          npx cap sync android
+
+      - name: Compiler l'APK installable
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd android
+          chmod +x gradlew
+          ./gradlew :app:assembleDebug --no-daemon
+          cp app/build/outputs/apk/debug/app-debug.apk ../Filet-Libre.apk
+
+      - name: Telecharger directement Filet-Libre.apk
+        uses: actions/upload-artifact@v7
+        with:
+          path: Filet-Libre.apk
+          archive: false
+          if-no-files-found: error
+          retention-days: 30
