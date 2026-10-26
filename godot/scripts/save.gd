@@ -65,21 +65,51 @@ const PITY := 60   # an S or S+ is guaranteed at the latest on this pull
 func pity_left() -> int:
 	return PITY - int(S.get("pity", 0))
 
-func pull(n: int) -> Array:
+## per-banner counters: pulls (for the spark), S++ pity, spark points
+func bstate(bid: String) -> Dictionary:
+	if not S.has("bstate"):
+		S.bstate = {}
+	if not S.bstate.has(bid):
+		S.bstate[bid] = {"pulls": 0, "spp": 0, "spark": 0}
+	return S.bstate[bid]
+
+func pull(n: int, bid := "") -> Array:
 	var res := []
 	var pity := int(S.get("pity", 0))
+	var b: Dictionary = DB.banner(bid) if bid != "" else {}
+	var st: Dictionary = bstate(bid) if not b.is_empty() else {}
+	var spp_max := int(b.get("pity", {}).get("S++", 0)) if not b.is_empty() else 0
+	var s_max := int(b.get("pity", {}).get("S", PITY)) if not b.is_empty() else PITY
 	for i in n:
 		pity += 1
-		var id := DB.roll_one(false, pity >= PITY)
-		if DB.BY_ID[id].rank in ["S", "S+"]:
+		var id: String
+		if b.is_empty():
+			id = DB.roll_one(false, pity >= s_max)
+		else:
+			st.spp = int(st.spp) + 1
+			id = DB.roll_banner(b, false, pity >= s_max, spp_max > 0 and int(st.spp) >= spp_max)
+			if DB.BY_ID[id].rank == "S++":
+				st.spp = 0
+			st.pulls = int(st.pulls) + 1
+			st.spark = int(st.spark) + 1
+		if DB.BY_ID[id].rank in ["S", "S+", "S++"]:
 			pity = 0
 		res.append(id)
-	if n == 10 and not res.any(func(id): return ["A", "S", "S+"].has(DB.BY_ID[id].rank)):
-		res[9] = DB.roll_one(true)
+	if n == 10 and not res.any(func(id): return ["A", "S", "S+", "S++"].has(DB.BY_ID[id].rank)):
+		res[9] = DB.roll_one(true) if b.is_empty() else DB.roll_banner(b, true)
 	S.pity = pity
 	var out := []
 	for id in res:
-		var tag: String
+		out.append({"id": id, "tag": grant(id)})
+	S.last = out
+	S.pulls = int(S.pulls) + n
+	save()
+	return out
+
+## add one copy of a character (new / +1 star / waiting list when the box is full)
+func grant(id: String) -> String:
+	if true:
+		var tag := ""
 		if not S.owned.has(id) and S.wait.has(id):
 			tag = "EN ATTENTE"
 		elif not S.owned.has(id) and box_used() >= S.box:
@@ -93,8 +123,5 @@ func pull(n: int) -> Array:
 			tag = "+1 ★"
 		else:
 			tag = "MAX ★"
-		out.append({"id": id, "tag": tag})
-	S.last = out
-	S.pulls = int(S.pulls) + n
-	save()
-	return out
+		return tag
+	return ""

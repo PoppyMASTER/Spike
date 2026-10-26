@@ -345,11 +345,20 @@ func cocked(p) -> bool:
 func pose_target(p) -> Dictionary:
 	var z := POSE0.duplicate()
 	var P_ = p.pose
+	var an: Dictionary = p.c.get("anim", {})
 	var cel = null
 	if g.state == "dead" and g.cel != null:
 		cel = "cheer" if g.cel == p.side else "slump"
 	if P_ == "dive":
 		z.merge({"rot": 1.42, "drop": 0.62, "crouch": 0.02, "lean": 0.05, "ua1": 1.6, "fa1": 0.0, "ua2": 1.5, "fa2": 0.1, "ta1": -0.15, "sa1": -0.25, "ta2": -0.3, "sa2": -0.55, "ground": 0.0}, true)
+		var dk := clampf(1.0 - (p.pose_t - g.gt) / 0.85, 0, 1)
+		match String(an.get("receive", "")):
+			"roulade":
+				z.rot = 1.42 + TAU * smoothstep(0.45, 1.0, dk)
+			"glissade":
+				z.merge({"rot": 1.52, "drop": 0.74, "ua1": 1.75, "fa1": 0.0, "ua2": 1.7, "fa2": 0.0, "ta1": -0.05, "sa1": -0.05, "ta2": -0.12, "sa2": -0.1}, true)
+			"une_main":
+				z.merge({"ua2": 0.3, "fa2": 0.4}, true)
 		return z
 	if not p.ground:
 		z.ground = 0.0
@@ -357,10 +366,22 @@ func pose_target(p) -> Dictionary:
 		if P_ == "spike":
 			var k := clampf(1.0 - (p.pose_t - g.gt) / 0.3, 0, 1)
 			z.merge({"lean": 0.45, "head": 0.2, "ua1": 2.9 - 2.2 * minf(1.0, k * 3.0), "fa1": 0.15, "ua2": 0.6, "fa2": 0.7, "ta1": 0.75, "sa1": -0.55, "ta2": 0.45, "sa2": -1.0}, true)
+			match String(an.get("spike", "")):
+				"vrille":
+					z.rot = -TAU * smoothstep(0.0, 1.0, k)
+				"ciseau":
+					z.merge({"ta1": 1.35, "sa1": -0.25, "ta2": -0.75, "sa2": -0.2}, true)
+				"suspendu":
+					z.merge({"lean": 0.6, "head": 0.35, "ta1": 1.0, "sa1": -1.4, "ta2": 0.8, "sa2": -1.5}, true)
+				"marteau":
+					var ua := 3.0 - 2.5 * minf(1.0, k * 3.0)
+					z.merge({"ua1": ua, "fa1": 0.1, "ua2": ua - 0.1, "fa2": 0.15}, true)
 		elif blockish:
 			z.merge({"lean": 0.06, "ua1": 3.08, "fa1": 0.0, "ua2": 3.02, "fa2": 0.0, "ta1": 0.05, "sa1": -0.12, "ta2": -0.05, "sa2": -0.15}, true)
 		elif cocked(p):
 			z.merge({"lean": -0.32, "head": 0.25, "ua1": 3.75, "fa1": 2.0, "ua2": 2.35, "fa2": 0.15, "ta1": 0.35, "sa1": -1.45, "ta2": 0.05, "sa2": -1.75}, true)
+			if String(an.get("spike", "")) == "suspendu":
+				z.merge({"lean": -0.55, "head": 0.35, "ua1": 3.95, "fa1": 2.3, "ta1": 0.1, "sa1": -1.9, "ta2": -0.1, "sa2": -2.0}, true)
 		elif p.vy > 3:
 			z.merge({"lean": -0.08, "ua1": 2.75, "fa1": 0.25, "ua2": 2.65, "fa2": 0.3, "ta1": 0.0, "sa1": -0.12, "ta2": -0.18, "sa2": -0.2}, true)
 		elif p.vy < -3:
@@ -373,6 +394,14 @@ func pose_target(p) -> Dictionary:
 	var fwd := signf(p.vx * p.f) if p.vx != 0 else 1.0
 	if cel == "cheer":
 		z.merge({"crouch": 0.03, "lean": -0.08, "head": -0.15, "ua1": 2.85, "fa1": 0.25, "ua2": 2.75, "fa2": 0.3, "f1": 0.2, "f2": -0.2}, true)
+		var w := sin(g.gt * 9.0)
+		match String(an.get("celebration", "")):
+			"poing_leve": z.merge({"ua1": 2.95, "fa1": 0.2, "ua2": 0.5, "fa2": 2.2, "head": -0.3}, true)
+			"doigt_ciel": z.merge({"ua1": 3.1, "fa1": 0.0, "ua2": 0.15, "fa2": 0.3, "head": -0.45}, true)
+			"salut": z.merge({"lean": 0.6, "head": 0.3, "ua1": 0.9, "fa1": 1.9, "ua2": 0.2, "fa2": 0.4}, true)
+			"danse": z.merge({"lean": 0.25 * w, "ua1": 2.2 + 0.8 * w, "fa1": 0.6, "ua2": 2.2 - 0.8 * w, "fa2": 0.6, "f1": 0.25 * w, "f2": -0.25 * w}, true)
+			"dos_tourne": z.merge({"lean": -0.1, "head": 0.45, "ua1": 1.2, "fa1": 2.4, "ua2": 1.0, "fa2": 2.4}, true)
+			"coeur": z.merge({"ua1": 2.7, "fa1": 2.3, "ua2": 2.6, "fa2": 2.3, "head": -0.2}, true)
 	elif cel == "slump":
 		z.merge({"crouch": 0.1, "lean": 0.5, "head": 0.45, "ua1": 0.12, "fa1": 0.1, "ua2": 0.08, "fa2": 0.1, "f1": 0.12, "f2": -0.12}, true)
 	elif P_ == "land":
@@ -383,6 +412,11 @@ func pose_target(p) -> Dictionary:
 		z.merge({"crouch": 0.1, "lean": -0.06, "head": -0.2, "ua1": 2.7, "fa1": 1.25, "ua2": 2.6, "fa2": 1.3, "f1": 0.24, "f2": -0.18}, true)
 	elif P_ == "serve":
 		z.merge({"crouch": 0.05, "lean": -0.12, "ua1": 3.6, "fa1": 1.9, "ua2": 3.0, "fa2": 0.0, "f1": 0.25, "f2": -0.2}, true)
+		match String(an.get("serve", "")):
+			"lancer_haut": z.merge({"lean": -0.25, "ua2": 3.2, "fa2": 0.05, "head": -0.5}, true)
+			"feinte_regard": z.merge({"head": -0.75}, true)
+			"rotation": z.merge({"lean": -0.35, "ua1": 4.05, "fa1": 2.2}, true)
+			"saut_flottant": z.merge({"crouch": 0.28, "lean": 0.1}, true)
 	elif P_ == "spike":
 		z.merge({"crouch": 0.08, "lean": 0.35, "ua1": 0.9, "fa1": 0.1, "ua2": 0.5, "fa2": 0.6, "f1": 0.3, "f2": -0.2}, true)
 	elif spd > 0.6:
@@ -397,6 +431,13 @@ func pose_target(p) -> Dictionary:
 			z.merge({"crouch": 0.3 + br, "lean": 0.8, "head": -0.6, "ua1": 0.3, "fa1": 0.12, "ua2": 0.22, "fa2": 0.15, "f1": 0.3, "f2": -0.24}, true)
 		else:
 			z.merge({"crouch": 0.04 + br, "lean": 0.08, "head": 0.0, "ua1": 0.12, "fa1": 0.3, "ua2": 0.08, "fa2": 0.35, "f1": 0.15, "f2": -0.12}, true)
+			match String(an.get("idle", "")):
+				"rebond": z.crouch = 0.06 + 0.06 * absf(sin(g.gt * 5.0))
+				"bras_croises": z.merge({"ua1": 1.25, "fa1": 2.45, "ua2": 1.05, "fa2": 2.45}, true)
+				"etirement":
+					if sin(g.gt * 0.7 + hash(p.c.id) % 5) > 0.55:
+						z.merge({"ua1": 3.1, "fa1": 0.2, "lean": -0.1}, true)
+				"sautille": z.drop = -absf(sin(g.gt * 6.5)) * 0.07
 	return z
 
 func update_pose(p, dt: float) -> void:
@@ -453,6 +494,7 @@ var _drop := 0.0
 var _hip := Vector2.ZERO
 var _cr := 1.0
 var _sr := 0.0
+var _o: Dictionary = {}      # outfit of the player being drawn
 
 func tf(pt: Vector2) -> Vector2:
 	var x := pt.x
@@ -502,11 +544,16 @@ func draw_body(ci: CanvasItem, p, pz: Dictionary, f: float) -> void:
 	var u := _u
 	var hip: Vector2 = s.hip
 	var tc: Dictionary = TEAMC[p.side]
+	var o: Dictionary = p.c.get("outfit", {})
+	if not o.is_empty():
+		# personal kit: own colours, team colour kept on shorts + armband
+		tc = {"jer": Color(String(o.main)), "jer2": Color(String(o.second)), "sh": tc.sh, "sock": tc.sock, "glow": tc.glow, "team": tc.jer}
 	var acc := Color(p.c.acc)
 	var skin := Color(p.c.skin)
 	var dskin := skin.darkened(0.2)
 	var olw := maxf(1.0, u * 0.028)
 	var so: Vector2 = s.so
+	_o = o
 	# back leg + arm
 	_leg(ci, s.lg2, true, hip, tc, skin, dskin, acc, olw)
 	_arm(ci, s.ar2, true, so, tc, skin, dskin, acc, olw)
@@ -517,8 +564,11 @@ func draw_body(ci: CanvasItem, p, pz: Dictionary, f: float) -> void:
 	var tp := PackedVector2Array([tf(hip - nx * 0.12), tf(hip + nx * 0.13), tf(sh + nx * 0.17), tf(sh - nx * 0.15)])
 	var ol := tp.duplicate()
 	ol.append(tp[0])
-	ci.draw_colored_polygon(tp, tc.jer)
-	ci.draw_colored_polygon(PackedVector2Array([tp[0], tp[3], tp[3].lerp(tp[2], 0.45), tp[0].lerp(tp[1], 0.45)]), tc.jer2)
+	if o.is_empty():
+		ci.draw_colored_polygon(tp, tc.jer)
+		ci.draw_colored_polygon(PackedVector2Array([tp[0], tp[3], tp[3].lerp(tp[2], 0.45), tp[0].lerp(tp[1], 0.45)]), tc.jer2)
+	else:
+		_outfit_torso(ci, p, o, tp, tc, u)
 	ci.draw_polyline(ol, Color(OUTL, 0.6), olw)
 	ci.draw_line(tp[3], tp[2], acc, maxf(1.0, u * 0.025))
 	if u > 26:
@@ -527,6 +577,14 @@ func draw_body(ci: CanvasItem, p, pz: Dictionary, f: float) -> void:
 		ci.draw_string(font_d, Vector2(-u * 0.1, u * 0.08), str(p.c.num), HORIZONTAL_ALIGNMENT_CENTER, u * 0.2, int(u * 0.2), acc)
 		ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	dot(ci, (tf(hip - nx * 0.13 + Vector2(0, 0.02)) + tf(hip + nx * 0.14 + Vector2(0, 0.02))) / 2.0, 0.13 * u, tc.sh)
+	if not o.is_empty():
+		var accs: Array = o.get("accessories", [])
+		if "collier" in accs:
+			dot(ci, tf(s.nk + Vector2(0.03, -0.05)), 0.035 * u, Color(String(o.accent)))
+		if "echarpe" in accs:
+			_scarf(ci, p, s, Color(String(o.accent)), u)
+		if String(o.cut) == "veste_ouverte":
+			_jacket(ci, p, s, pz, Color(String(o.main)), u, olw)
 	# front leg, head, front arm
 	_leg(ci, s.lg1, false, hip, tc, skin, dskin, acc, olw)
 	var hc := tf(s.hd)
@@ -546,18 +604,34 @@ func _leg(ci: CanvasItem, lg: Array, back: bool, hip: Vector2, tc: Dictionary, s
 	limb(ci, k, mid, 0.095, sk, true, olw)
 	limb(ci, mid, ft, 0.095, Color("bfc1c6") if back else tc.sock, true, olw)
 	dot(ci, tf(k), 0.058 * _u, Color("151a24") if back else Color("2a3344"))
+	if not _o.is_empty() and "genouilleres" in _o.get("accessories", []):
+		dot(ci, tf(k), 0.085 * _u, Color(String(_o.accent)).darkened(0.3 if back else 0.0))
 	ellipse(ci, tf(ft) + Vector2(_f * 0.04 * _u, 0), 0.1 * _u, 0.042 * _u, acc.darkened(0.35) if back else acc)
 
 func _arm(ci: CanvasItem, ar: Array, back: bool, so: Vector2, tc: Dictionary, skin: Color, dskin: Color, acc: Color, olw: float) -> void:
 	var sk := dskin if back else skin
 	var el: Vector2 = ar[0]
 	var hd: Vector2 = ar[1]
-	limb(ci, so, so.lerp(el, 0.45), 0.1, tc.jer2 if back else tc.jer, true, olw)
-	limb(ci, so.lerp(el, 0.4), el, 0.08, sk, true, olw)
-	limb(ci, el, hd, 0.072, sk, true, olw)
+	var cut := String(_o.get("cut", "maillot")) if not _o.is_empty() else "maillot"
+	var sleeve: Color = tc.jer2 if back else tc.jer
+	if cut == "veste_ouverte" or cut == "manches_longues":
+		limb(ci, so, el, 0.105, sleeve.darkened(0.15) if back else sleeve, true, olw)
+		limb(ci, el, el.lerp(hd, 0.85), 0.088, sleeve.darkened(0.15) if back else sleeve, true, olw)
+		limb(ci, el.lerp(hd, 0.85), hd, 0.07, sk, true, olw)
+	else:
+		if cut != "debardeur":
+			limb(ci, so, so.lerp(el, 0.45), 0.1, sleeve, true, olw)
+		limb(ci, so.lerp(el, 0.4) if cut != "debardeur" else so, el, 0.08, sk, true, olw)
+		limb(ci, el, hd, 0.072, sk, true, olw)
+	if tc.has("team") and not back:
+		limb(ci, so.lerp(el, 0.18), so.lerp(el, 0.32), 0.115, tc.team, false, olw)   # team armband
+	var accs: Array = _o.get("accessories", []) if not _o.is_empty() else []
 	if not back:
-		limb(ci, el.lerp(hd, 0.62), el.lerp(hd, 0.82), 0.085, acc, false, olw)
-	dot(ci, tf(hd), 0.045 * _u, sk)
+		var bandc: Color = Color(String(_o.accent)) if "manchettes" in accs else acc
+		limb(ci, el.lerp(hd, 0.62), el.lerp(hd, 0.82), 0.095 if "manchettes" in accs else 0.085, bandc, false, olw)
+	if "bracelet" in accs:
+		limb(ci, el.lerp(hd, 0.86), el.lerp(hd, 0.9), 0.08, Color("e8c15a"), false, olw)
+	dot(ci, tf(hd), 0.045 * _u, Color(String(_o.accent)) if "mitaines" in accs else sk)
 
 func quad_pts(a: Vector2, c: Vector2, b: Vector2, n := 6) -> PackedVector2Array:
 	var pts := PackedVector2Array()
@@ -590,8 +664,18 @@ func draw_mini_head(ci: CanvasItem, c: Dictionary, r: float, f: float) -> void:
 	var bangs := quad_pts(Vector2(-f * r * 0.7, -r * 0.85), Vector2(f * r * 0.9, -r * 1.25), Vector2(f * r * 1.02, -r * 0.05))
 	bangs.append_array(PackedVector2Array([Vector2(f * r * 0.72, -r * 0.38), Vector2(f * r * 0.6, -r * 0.05), Vector2(f * r * 0.38, -r * 0.42), Vector2(f * r * 0.15, -r * 0.15), Vector2(0, -r * 0.5)]))
 	ci.draw_colored_polygon(bangs, hair)
+	var oacc: Array = c.get("outfit", {}).get("accessories", []) if c.get("outfit") is Dictionary else []
+	var ocol := Color(String(c.get("outfit", {}).get("accent", c.acc))) if c.get("outfit") is Dictionary else Color(c.acc)
 	if c.band != null:
 		ellipse(ci, Vector2(0, -r * 0.42), r * 1.02, r * 0.16, Color(c.band))
+	if "ruban_cheveux" in oacc:
+		var sw := sin(g.gt * 7.0) * r * 0.15
+		ci.draw_colored_polygon(PackedVector2Array([Vector2(-f * r * 0.95, -r * 0.4), Vector2(-f * r * 1.7, r * 0.2 + sw), Vector2(-f * r * 1.5, r * 0.45 + sw), Vector2(-f * r * 0.9, -r * 0.15)]), ocol)
+		dot(ci, Vector2(-f * r * 0.92, -r * 0.3), r * 0.2, ocol)
+	if "boucle_oreille" in oacc:
+		dot(ci, Vector2(f * r * 0.15, r * 0.45), r * 0.11, Color("e8c15a"))
+	if "lunettes" in oacc and r > 4:
+		ci.draw_rect(Rect2(f * r * 0.2 - r * 0.1, -r * 0.2, r * 0.75, r * 0.2), Color(0.05, 0.06, 0.1, 0.9))
 	if r > 4:
 		ci.draw_rect(Rect2(f * r * 0.55 - r * 0.07, -r * 0.02, r * 0.14, r * 0.26), Color("161922"))
 		ci.draw_rect(Rect2(f * r * 0.52 - r * 0.14, -r * 0.15, r * 0.28, r * 0.07), Color("161922"))
@@ -606,6 +690,7 @@ func _process(delta: float) -> void:
 	var tp0 := Time.get_ticks_usec()
 	for p in g.players:
 		update_pose(p, delta)
+	update_trails()
 	t_pose += Time.get_ticks_usec() - tp0
 	# zoom / shake / tilt around the ball
 	CZ = g.ball.z
@@ -802,6 +887,7 @@ func _draw_add_main() -> void:
 	var c := Vector2(X(b.x), Y(b.y))
 	var gc: Color = g.trail_col[0] if g.trail_hot else Color(1, 0.81, 0.24)
 	glow(ci, c, K * 0.13 * 3.6, Color(gc, 0.55))
+	draw_trails(ci)
 	# player auras (ult ready) and ghosts
 	for p in g.players:
 		if p.ult_on and p.ult >= 1.0:
@@ -906,3 +992,127 @@ func _draw_top() -> void:
 			var mx := cx - w / 2 + (1.0 - kk) * w / 2
 			ci.draw_colored_polygon(PackedVector2Array([Vector2(mx, cy - 2), Vector2(mx - 5, cy - 9), Vector2(mx + 5, cy - 9)]), Color("f5f4f0"))
 			ci.draw_rect(Rect2(mx - 1, cy - 2, 2, 11), Color("f5f4f0"))
+
+# ---------------------------------------------------------------- personal outfits (S++ and future skins)
+func _tp(tp: PackedVector2Array, u_: float, v: float) -> Vector2:
+	# point inside the torso quad: u across (0 back edge .. 1 front edge), v from hips (0) to shoulders (1)
+	return tp[0].lerp(tp[1], u_).lerp(tp[3].lerp(tp[2], u_), v)
+
+func _outfit_torso(ci: CanvasItem, p, o: Dictionary, tp: PackedVector2Array, tc: Dictionary, u: float) -> void:
+	var main := Color(String(o.main))
+	var second := Color(String(o.second))
+	var accent := Color(String(o.accent))
+	var cut := String(o.get("cut", "maillot"))
+	if cut == "veste_ouverte":
+		# open jacket: inner shirt (second colour) visible in the middle
+		ci.draw_colored_polygon(tp, second)
+		return
+	ci.draw_colored_polygon(tp, main)
+	match String(o.get("pattern", "uni")):
+		"degrade":
+			ci.draw_colored_polygon(PackedVector2Array([_tp(tp, 0, 0), _tp(tp, 1, 0), _tp(tp, 1, 0.45), _tp(tp, 0, 0.45)]), Color(second, 0.85))
+			ci.draw_colored_polygon(PackedVector2Array([_tp(tp, 0, 0.45), _tp(tp, 1, 0.45), _tp(tp, 1, 0.62), _tp(tp, 0, 0.62)]), Color(second, 0.4))
+		"bandes":
+			for v0 in [0.28, 0.55]:
+				ci.draw_colored_polygon(PackedVector2Array([_tp(tp, 0, v0), _tp(tp, 1, v0), _tp(tp, 1, v0 + 0.1), _tp(tp, 0, v0 + 0.1)]), accent)
+		"flammes":
+			for i in 4:
+				var x0 := i * 0.25
+				ci.draw_colored_polygon(PackedVector2Array([_tp(tp, x0, 0), _tp(tp, x0 + 0.25, 0), _tp(tp, x0 + 0.12, 0.42 + 0.1 * sin(g.gt * 8.0 + i))]), accent)
+		"etoiles":
+			for q in [Vector2(0.3, 0.35), Vector2(0.7, 0.6), Vector2(0.45, 0.8)]:
+				dot(ci, _tp(tp, q.x, q.y), 0.03 * u, accent)
+		"chevrons":
+			ci.draw_polyline(PackedVector2Array([_tp(tp, 0.05, 0.7), _tp(tp, 0.5, 0.45), _tp(tp, 0.95, 0.7)]), accent, maxf(1.5, u * 0.04))
+		"eclairs":
+			ci.draw_polyline(PackedVector2Array([_tp(tp, 0.55, 0.95), _tp(tp, 0.35, 0.6), _tp(tp, 0.6, 0.55), _tp(tp, 0.4, 0.1)]), accent, maxf(1.5, u * 0.04))
+	ci.draw_line(_tp(tp, 0, 0.03), _tp(tp, 1, 0.03), tc.get("team", accent), maxf(1.5, u * 0.035))
+
+func _jacket(ci: CanvasItem, p, s: Dictionary, pz: Dictionary, col: Color, u: float, olw: float) -> void:
+	# two panels from the shoulders to below the hips, swinging with speed
+	var ax := Vector2(sin(pz.lean), cos(pz.lean))
+	var nx := Vector2(ax.y, -ax.x)
+	var swing := clampf(-p.vx * p.f * 0.03, -0.12, 0.12) + sin(g.gt * 5.0) * 0.01
+	var hip: Vector2 = s.hip
+	var sh: Vector2 = s.sh
+	for side in [-1.0, 1.0]:
+		var e0: Vector2 = sh + nx * 0.17 * side
+		var e1: Vector2 = sh + nx * 0.05 * side
+		var b0: Vector2 = hip + nx * 0.16 * side - ax * 0.16 + Vector2(swing, 0)
+		var b1: Vector2 = hip + nx * 0.04 * side - ax * 0.14 + Vector2(swing * 1.3, 0)
+		var poly := PackedVector2Array([tf(e0), tf(e1), tf(b1), tf(b0)])
+		ci.draw_colored_polygon(poly, col if side > 0 else col.darkened(0.12))
+		var ol := poly.duplicate()
+		ol.append(poly[0])
+		ci.draw_polyline(ol, Color(OUTL, 0.5), olw * 0.8)
+
+func _scarf(ci: CanvasItem, p, s: Dictionary, col: Color, u: float) -> void:
+	var pts := PackedVector2Array()
+	var base: Vector2 = s.nk
+	var back := -1.0
+	var speed := clampf(absf(p.vx) / 6.0, 0.25, 1.0)
+	for i in 6:
+		var t := float(i) / 5.0
+		pts.append(tf(base + Vector2(back * t * 0.55 * speed, -t * 0.12 + sin(g.gt * 9.0 - i * 0.9) * 0.04 * t)))
+	ci.draw_polyline(pts, col, maxf(2.0, u * 0.06), true)
+
+# ---------------------------------------------------------------- signature trails
+var _trails := {}    # player -> Array of [Vector3(x, y, z), t]
+const TRAIL_DEF := {"eclairs": "ffe873", "flammes": "ff8a3c", "givre": "bfefff", "petales": "ffa6d2", "ombre": "6a3fb0", "etoiles": "fff3b0", "plumes": "ffffff"}
+
+func _trail_col(p, i: int) -> Color:
+	var e = p.c.get("elem")
+	if e is Dictionary and e.has("c"):
+		var a: PackedStringArray = String(e.c2 if i == 1 else e.c).split(",")
+		if a.size() == 3:
+			return Color8(int(a[0]), int(a[1]), int(a[2]))
+	return Color(TRAIL_DEF.get(String(p.c.get("anim", {}).get("trail", "")), "ffffff"))
+
+func update_trails() -> void:
+	for p in g.players:
+		var tr := String(p.c.get("anim", {}).get("trail", "aucune"))
+		if tr == "aucune" or tr == "":
+			continue
+		if not _trails.has(p):
+			_trails[p] = []
+		var arr: Array = _trails[p]
+		if (absf(p.vx) > 1.2 or not p.ground) and (arr.is_empty() or g.gt - float(arr.back()[1]) > 0.035):
+			arr.append([Vector3(p.x - p.f * 0.1, p.y + 0.85, p.z), g.gt])
+		while not arr.is_empty() and g.gt - float(arr[0][1]) > 0.45:
+			arr.pop_front()
+
+func draw_trails(ci: CanvasItem) -> void:
+	for p in _trails:
+		var arr: Array = _trails[p]
+		var tr := String(p.c.get("anim", {}).get("trail", ""))
+		var c1 := _trail_col(p, 0)
+		var c2 := _trail_col(p, 1)
+		for i in arr.size():
+			var q: Vector3 = arr[i][0]
+			var k: float = 1.0 - (g.gt - float(arr[i][1])) / 0.45
+			CZ = q.z
+			var c := Vector2(X(q.x), Y(q.y))
+			var r := K * 0.12 * k
+			match tr:
+				"eclairs":
+					if i > 0:
+						var q0: Vector3 = arr[i - 1][0]
+						ci.draw_line(Vector2(X(q0.x), Y(q0.y)) + Vector2(0, sin(i * 7.0) * r), c, Color(c1, k), maxf(1.0, r * 0.4))
+				"flammes":
+					glow(ci, c + Vector2(0, -r * (1.0 - k) * 4.0), r * 2.2, Color(c1, 0.5 * k))
+				"givre", "etoiles":
+					dot(ci, c + Vector2(sin(i * 3.1) * r * 2, cos(i * 2.3) * r * 2), maxf(1.0, r * 0.35), Color(c2, k))
+				"petales":
+					ellipse(ci, c + Vector2(sin(g.gt * 3.0 + i) * r * 2, (1.0 - k) * K * 0.3), r * 0.5, r * 0.28, Color(c1, k))
+				"ombre":
+					glow(ci, c, r * 2.6, Color(c1.darkened(0.4), 0.45 * k))
+				"plumes":
+					ellipse(ci, c + Vector2(0, (1.0 - k) * K * 0.4), r * 0.55, r * 0.2, Color(c2, k))
+				_:
+					glow(ci, c, r * 2.0, Color(c1, 0.4 * k))
+	# S++ ground aura
+	for p in g.players:
+		if String(p.c.rank) == "S++":
+			CZ = p.z
+			var pc := _trail_col(p, 0)
+			ellipse(ci, Vector2(X(p.x), Y(0)), K * 0.45, K * 0.12, Color(pc, 0.25 + 0.12 * sin(g.gt * 4.0)))

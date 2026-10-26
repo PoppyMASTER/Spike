@@ -9,7 +9,7 @@ signal updated
 
 const TILE := 256
 const OUTL := Color(0.03, 0.04, 0.06)
-const RKBG := {"C": ["4a5360", "262c35"], "B": ["2f8a52", "13301f"], "A": ["2f6fd6", "122046"], "S": ["8f4fe0", "2a1248"], "S+": ["ff9a3c", "5a1a3a"]}
+const RKBG := {"C": ["4a5360", "262c35"], "B": ["2f8a52", "13301f"], "A": ["2f6fd6", "122046"], "S": ["8f4fe0", "2a1248"], "S+": ["ff9a3c", "5a1a3a"], "S++": ["1a1030", "07040f"]}
 
 var cards := {}       # id -> Texture2D
 var cuts := {}        # id -> Texture2D
@@ -36,6 +36,19 @@ func card(id: String) -> Texture2D:
 	return cards.get(id, null)
 func cutout(id: String) -> Texture2D:
 	return cuts.get(id, null)
+
+## full-body action art (S++ and up): res://art/action/<id>.png, or null
+var _act := {}
+func action(id: String) -> Texture2D:
+	if not _act.has(id):
+		var p := "res://art/action/%s.png" % id
+		_act[id] = load(p) if ResourceLoader.exists(p) else null
+	return _act[id]
+
+## banner images: kind = "key" (16:9 key art) or "logo"
+func banner_tex(id: String, kind: String) -> Texture2D:
+	var p := "res://art/banners/%s_%s.png" % [id, kind]
+	return load(p) if ResourceLoader.exists(p) else null
 
 func _load_illus(id: String) -> Texture2D:
 	var rp := "res://art/%s.png" % id
@@ -124,6 +137,15 @@ func _paint_card(ci: Node2D, c: Dictionary) -> void:
 	var c1 := Color(bg[0])
 	var c2 := Color(bg[1])
 	ci.draw_polygon(PackedVector2Array([Vector2(0, 0), Vector2(s, 0), Vector2(s, s), Vector2(0, s)]), PackedColorArray([c1, c1.lerp(c2, 0.5), c2, c1.lerp(c2, 0.6)]))
+	if c.rank == "S++":
+		# night sky + rainbow halo
+		for i in 7:
+			var hue := float(i) / 7.0
+			ci.draw_circle(Vector2(s * 0.5, s * 0.42), s * (0.75 - i * 0.07), Color.from_hsv(hue, 0.55, 1.0, 0.16))
+		var rs := RandomNumberGenerator.new()
+		rs.seed = 7
+		for i in 40:
+			ci.draw_circle(Vector2(rs.randf() * s, rs.randf() * s), 0.6 + rs.randf() * 1.6, Color(1, 1, 1, 0.3 + rs.randf() * 0.6))
 	if c.rank == "S+":
 		ci.draw_polygon(PackedVector2Array([Vector2(0, 0), Vector2(s, 0), Vector2(s, s), Vector2(0, s)]),
 			PackedColorArray([Color(1, 0.86, 0.35, 0.55), Color(1, 0.43, 0.55, 0.35), Color(0.59, 0.43, 1, 0.5), Color(1, 0.43, 0.55, 0.35)]))
@@ -152,7 +174,11 @@ func _paint_card(ci: Node2D, c: Dictionary) -> void:
 		ci.draw_texture_rect(ill, Rect2((s - dw) / 2.0, 0, dw, dh), false)
 	else:
 		_paint_bust(ci, c, s)
-	ci.draw_rect(Rect2(1.5, 1.5, s - 3, s - 3), Color(1, 1, 1, 0.55), false, 3.0)
+	if c.rank == "S++":
+		for i in 6:   # rainbow frame
+			ci.draw_rect(Rect2(1.5 + i, 1.5 + i, s - 3 - i * 2, s - 3 - i * 2), Color.from_hsv(float(i) / 6.0, 0.6, 1.0, 0.85), false, 1.0)
+	else:
+		ci.draw_rect(Rect2(1.5, 1.5, s - 3, s - 3), Color(1, 1, 1, 0.55), false, 3.0)
 
 func _paint_bust(ci: Node2D, c: Dictionary, s: float) -> void:
 	var acc := Color(c.acc)

@@ -4,7 +4,22 @@ extends Control
 
 signal done
 
-const RCOL := {"C": Color("cfd6de"), "B": Color("5cd18a"), "A": Color("4aa3ff"), "S": Color("c77dff"), "S+": Color("ffcf3c")}
+const RCOL := {"C": Color("cfd6de"), "B": Color("5cd18a"), "A": Color("4aa3ff"), "S": Color("c77dff"), "S+": Color("ffcf3c"), "S++": Color("ff6fd8")}
+const BALL := {"or": Color("ffcf3c"), "violet": Color("b06bff"), "glace": Color("8fe3ff"), "feu": Color("ff7a2b"), "ombre": Color("6a3fb0")}
+var fx_ball := ""
+var fx_parts := ""
+
+## rank colour; S++ cycles through the rainbow
+func rcol(rk: String) -> Color:
+	if rk == "S++":
+		return Color.from_hsv(fmod(t * 0.35, 1.0), 0.55, 1.0)
+	return RCOL[rk]
+func ball_col() -> Color:
+	if fx_ball == "arc_en_ciel":
+		return Color.from_hsv(fmod(t * 0.6, 1.0), 0.5, 1.0)
+	return BALL.get(fx_ball, Color(1, 1, 1))
+func cut_len(id: String) -> float:
+	return 3.2 if DB.BY_ID[id].rank == "S++" else 1.9
 
 var res: Array
 var best := "C"
@@ -17,8 +32,10 @@ var finished := false
 var ok_btn: Button
 var skip_btn: Button
 
-func play(r: Array, instant := false) -> void:
+func play(r: Array, instant := false, fx := {}) -> void:
 	res = r
+	fx_ball = String(fx.get("ball", ""))
+	fx_parts = String(fx.get("particles", ""))
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	for x in res:
@@ -46,7 +63,7 @@ func play(r: Array, instant := false) -> void:
 		cards[i].flip_t = tt
 		if DB.rank_idx(cards[i].rank) >= 3:
 			cut_queue.append({"id": cards[i].id, "tag": cards[i].tag, "t0": tt + 0.38})
-			tt += 2.3
+			tt += cut_len(cards[i].id) + 0.4
 		else:
 			tt += 0.2 if cards.size() == 1 else 0.14
 	set_meta("end_t", tt + 0.15)
@@ -85,7 +102,7 @@ func _process(dt: float) -> void:
 		if prev < q.t0 and t >= q.t0:
 			cut = q
 			Sfx.play("fanfare", DB.rank_idx(DB.BY_ID[q.id].rank))
-	if cut != null and t - cut.t0 > 1.9:
+	if cut != null and t - cut.t0 > cut_len(cut.id):
 		cut = null
 	if not finished and t >= get_meta("end_t", 99.0):
 		_finish()
@@ -110,7 +127,7 @@ func _gui_input(ev: InputEvent) -> void:
 
 func _draw() -> void:
 	var s := size
-	var sc: Color = RCOL[best]
+	var sc: Color = rcol(best)
 	draw_rect(Rect2(Vector2.ZERO, s), Color("060b18"))
 	draw_polygon(PackedVector2Array([Vector2(0, 0), Vector2(s.x, 0), s, Vector2(0, s.y)]), PackedColorArray([Color("16306a"), Color("16306a"), Color("060b18"), Color("060b18")]))
 	var c0 := Vector2(s.x / 2, s.y * 0.42)
@@ -126,11 +143,13 @@ func _draw() -> void:
 		var y := lerpf(-s.y * 0.6, 0.0, ease(k, 0.4))
 		var bounce := sin(clampf((t - hit_t * 0.7) / (hit_t * 0.3), 0, 1) * PI) * -40.0 if t > hit_t * 0.7 else 0.0
 		var r := 46.0 * (1.0 + maxf(0.0, t - hit_t) * 4.0)
+		var gl := ball_col() if fx_ball != "" else sc
 		for i in 4:
-			draw_circle(c0 + Vector2(0, y + bounce), r * (1.6 + i * 0.5), Color(sc, 0.06))
+			draw_circle(c0 + Vector2(0, y + bounce), r * (1.6 + i * 0.5), Color(gl, 0.08 if fx_ball != "" else 0.06))
 		draw_circle(c0 + Vector2(0, y + bounce), r, Color("f4f7ff"))
 		draw_arc(c0 + Vector2(0, y + bounce), r * 0.7, t * 9.0, t * 9.0 + 4.0, 16, Color("2f6fe0"), 6.0, true)
 		draw_arc(c0 + Vector2(0, y + bounce), r * 1.2, -t * 6.0, -t * 6.0 + 3.0, 16, Color(1, 1, 1, 0.7), 3.0, true)
+	_particles(s)
 	# flash + shockwave
 	if t > hit_t and t < hit_t + 0.6:
 		var k := (t - hit_t) / 0.6
@@ -147,7 +166,7 @@ func _draw() -> void:
 		var front := flip >= 0.5
 		var w: float = c.w * sx
 		var rect := Rect2(c.x + (c.w - w) / 2, y, w, c.h)
-		var rc: Color = RCOL[c.rank]
+		var rc: Color = rcol(c.rank)
 		if not front:
 			draw_rect(rect, Color("1a3f8f"))
 			draw_rect(rect, Color(1, 1, 1, 0.8), false, 2.0)
@@ -174,17 +193,44 @@ func _draw() -> void:
 		var e: float = t - cut.t0
 		var a := minf(1.0, e / 0.15)
 		var ch: Dictionary = DB.BY_ID[cut.id]
-		var rc: Color = RCOL[ch.rank]
-		draw_rect(Rect2(Vector2.ZERO, s), Color(0.02, 0.03, 0.07, 0.6 * a))
+		var rc: Color = rcol(ch.rank)
+		var spp: bool = ch.rank == "S++"
+		draw_rect(Rect2(Vector2.ZERO, s), Color(0.02, 0.03, 0.07, (0.85 if spp else 0.6) * a))
 		draw_set_transform(Vector2(s.x / 2, s.y / 2), -0.14, Vector2.ONE)
-		draw_rect(Rect2(-s.x, -s.y * 0.23, s.x * 2, s.y * 0.46), Color(rc, 0.85 * a))
+		if spp:
+			# rainbow stripes sliding behind the character
+			for i in 7:
+				var hy := -s.y * 0.3 + i * s.y * 0.6 / 7.0
+				var off := fmod(e * 900.0 + i * 140.0, s.x * 2.0) - s.x
+				draw_rect(Rect2(-s.x + off * 0.1, hy, s.x * 2, s.y * 0.6 / 7.0 + 1), Color(Color.from_hsv(fmod(float(i) / 7.0 + e * 0.2, 1.0), 0.6, 1.0), 0.75 * a))
+		else:
+			draw_rect(Rect2(-s.x, -s.y * 0.23, s.x * 2, s.y * 0.46), Color(rc, 0.85 * a))
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		if spp and e < 0.5:
+			# the screen "cracks" open
+			var rs := RandomNumberGenerator.new()
+			rs.seed = 3
+			var ctr := s / 2.0
+			for i in 12:
+				var an := rs.randf() * TAU
+				var p0 := ctr
+				var pts := PackedVector2Array([p0])
+				for j in 5:
+					p0 += Vector2(cos(an + rs.randf_range(-0.5, 0.5)), sin(an + rs.randf_range(-0.5, 0.5))) * s.x * 0.12
+					pts.append(p0)
+				draw_polyline(pts, Color(1, 1, 1, 1.0 - e * 2.0), 3.0)
+			draw_rect(Rect2(Vector2.ZERO, s), Color(1, 1, 1, maxf(0.0, 0.8 - e * 2.0)))
 		var slide := (1.0 - ease(minf(1.0, e / 0.45), 0.3)) * s.x * 0.6
-		var cutout := Art.cutout(cut.id)
+		var act := Art.action(cut.id) if spp else null
+		if act:
+			var ah := s.y * 1.05
+			var aw := ah * act.get_width() / act.get_height()
+			draw_texture_rect(act, Rect2(s.x * 0.05 + slide, s.y - ah + sin(e * 2.0) * 6.0, aw, ah), false, Color(1, 1, 1, a))
+		var cutout := Art.cutout(cut.id) if not act else null
 		var S := minf(s.y * 1.0, s.x * 0.5)
 		if cutout:
 			draw_texture_rect(cutout, Rect2(s.x * 0.08 + slide, s.y - S, S, S), false, Color(1, 1, 1, a))
-		else:
+		elif not act:
 			draw_texture_rect(Art.card(cut.id), Rect2(s.x * 0.12 + slide, s.y * 0.2, S * 0.6, S * 0.6), false, Color(1, 1, 1, a))
 		var tx := s.x * 0.55 + slide
 		draw_string(Kit.font_c, Vector2(tx, s.y * 0.36), ("NOUVELLE RECRUE" if cut.tag == "NOUVEAU" else "RECRUE") + " · " + DB.role_name(ch.role).to_upper(), HORIZONTAL_ALIGNMENT_LEFT, -1, 22, Color(1, 1, 1, a))
@@ -192,3 +238,37 @@ func _draw() -> void:
 		draw_string(Kit.font_d, Vector2(tx, s.y * 0.53), ch.rank, HORIZONTAL_ALIGNMENT_LEFT, -1, 110, Color(1, 1, 1, a))
 		draw_string(Kit.font_d, Vector2(tx, s.y * 0.64), ch.name.to_upper(), HORIZONTAL_ALIGNMENT_LEFT, -1, 44, Color(1, 1, 1, a))
 		draw_string(Kit.font_c, Vector2(tx, s.y * 0.71), "« %s »" % ch.title, HORIZONTAL_ALIGNMENT_LEFT, -1, 22, Color(1, 1, 1, 0.85 * a))
+		var line := String(ch.get("voice", {}).get("summon", ""))
+		if line != "" and e > 0.6:
+			var la := minf(1.0, (e - 0.6) / 0.3) * a
+			var shown := line.substr(0, int((e - 0.6) * 40.0))
+			draw_rect(Rect2(tx - 12, s.y * 0.76, s.x * 0.42, 54), Color(0, 0, 0, 0.55 * la))
+			draw_string(Kit.font_c, Vector2(tx, s.y * 0.76 + 36), "« " + shown + " »", HORIZONTAL_ALIGNMENT_LEFT, s.x * 0.4, 24, Color(rc.lerp(Color.WHITE, 0.6), la))
+
+## banner particles drifting over the whole sequence
+func _particles(s: Vector2) -> void:
+	if fx_parts == "":
+		return
+	var col := ball_col() if fx_ball != "" else Color(1, 1, 1)
+	for i in 34:
+		var seed := float(i) * 12.9898
+		var px := fmod(abs(sin(seed) * 43758.5453), 1.0) * s.x
+		var sp := 40.0 + fmod(abs(sin(seed * 1.7) * 9123.1), 1.0) * 90.0
+		var py := fmod(fmod(abs(cos(seed) * 23421.6), 1.0) * s.y + t * sp, s.y + 40.0) - 20.0
+		var a := 0.35 + 0.35 * sin(t * 3.0 + i)
+		var pp := Vector2(px + sin(t * 1.3 + i) * 18.0, py)
+		match fx_parts:
+			"etoiles":
+				var r := 3.0 + (i % 3) * 2.0
+				draw_colored_polygon(PackedVector2Array([pp + Vector2(0, -r * 2), pp + Vector2(r * 0.4, -r * 0.4), pp + Vector2(r * 2, 0), pp + Vector2(r * 0.4, r * 0.4), pp + Vector2(0, r * 2), pp + Vector2(-r * 0.4, r * 0.4), pp + Vector2(-r * 2, 0), pp + Vector2(-r * 0.4, -r * 0.4)]), Color(col.lerp(Color.WHITE, 0.5), a))
+			"eclairs":
+				draw_polyline(PackedVector2Array([pp, pp + Vector2(6, 10), pp + Vector2(-2, 14), pp + Vector2(6, 26)]), Color(Color("ffe873"), a), 2.0)
+			"plumes", "flocons":
+				draw_circle(pp, 3.0 + (i % 3), Color(1, 1, 1, a))
+			"petales":
+				draw_set_transform(pp, t * 2.0 + i, Vector2.ONE)
+				draw_circle(Vector2.ZERO, 4.0, Color(Color("ff9ccf"), a))
+				draw_circle(Vector2(3, 0), 3.0, Color(Color("ffc4e0"), a))
+				draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+			"flammes":
+				draw_circle(pp, 4.0 + (i % 4), Color(Color("ff8a3c"), a * 0.8))

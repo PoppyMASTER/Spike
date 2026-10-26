@@ -450,8 +450,14 @@ func _draw_cutin(s: Vector2) -> void:
 	draw_rect(Rect2(-s.x, bh / 2 + 1, s.x * 2, 4), Color(1, 0.81, 0.24, a))
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	var ease_k := 1.0 - pow(1.0 - minf(1.0, e / 0.22), 3)
-	var cut := Art.cutout(p.c.id)
-	if cut:
+	var act := Art.action(p.c.id) if String(p.c.rank) == "S++" else null
+	var cut := Art.cutout(p.c.id) if act == null else null
+	if act:
+		var AH := s.y * 1.1
+		var AW := AH * act.get_width() / act.get_height()
+		var axp := -AW + (s.x * 0.04 + AW) * ease_k if p.side == lft else s.x - (s.x * 0.04 + AW) * ease_k
+		draw_texture_rect(act, Rect2(axp, s.y - AH, AW, AH), false, Color(1, 1, 1, a))
+	elif cut:
 		var S := minf(s.y * 1.08, s.x * 0.62)
 		var ix := -S + (s.x * 0.04 + S) * ease_k if p.side == lft else s.x - (s.x * 0.04 + S) * ease_k
 		draw_texture_rect(cut, Rect2(ix, s.y - S, S, S), false, Color(1, 1, 1, a))
@@ -465,6 +471,9 @@ func _draw_cutin(s: Vector2) -> void:
 	var al := HORIZONTAL_ALIGNMENT_RIGHT if p.side == lft else HORIZONTAL_ALIGNMENT_LEFT
 	txt(String(p.c.ultName).to_upper(), Vector2(tx, s.y * 0.5), int(minf(s.x * 0.1, s.y * 0.16)), Color(1, 0.81, 0.24, a), al, null, 12)
 	txt(String(p.c.name).to_upper(), Vector2(tx, s.y * 0.62), int(minf(s.x * 0.045, s.y * 0.07)), Color(0.96, 0.96, 0.94, a), al, null, 8)
+	var vl := String(p.c.get("voice", {}).get("ult", ""))
+	if vl != "":
+		txt("« %s »" % vl, Vector2(tx, s.y * 0.72), int(minf(s.x * 0.03, s.y * 0.05)), Color(1, 0.9, 0.6, a), al, Kit.font_c, 6)
 
 func _draw_intro(s: Vector2) -> void:
 	var k := minf(1.0, intro_t / 0.5)

@@ -1,0 +1,34 @@
+{
+ "id": "equilibre_celeste",
+ "title": "Équilibre Céleste",
+ "subtitle": "Deux forces opposées, un même destin sur le terrain.",
+ "description": "Bannière limitée Yin–Yang. Kaien et Liora, rang S++, ne sont obtenables qu’ici.",
+ "start": "2026-10-26",
+ "end": "2026-11-21",
+ "theme": {
+  "main": "#171724",
+  "second": "#6b5c85",
+  "accent": "#e0b963"
+ },
+ "featured": [
+  "kaien",
+  "liora"
+ ],
+ "rates": {
+  "S++": 0.5,
+  "S+": 2,
+  "S": 8,
+  "A": 18,
+  "B": 30,
+  "C": 41.5
+ },
+ "pity": {
+  "S++": 90,
+  "S": 60
+ },
+ "spark": 150,
+ "summon_fx": {
+  "ball": "arc_en_ciel",
+  "particles": "etoiles"
+ }
+}

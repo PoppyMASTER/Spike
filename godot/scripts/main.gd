@@ -34,6 +34,10 @@ func _ready() -> void:
 		_ui_shots(args[args.find("--ui") + 1])
 	elif "--socui" in args:
 		_soc_ui(args[args.find("--socui") + 1])
+	elif "--sppmatch" in args:
+		_spp_match(args[args.find("--sppmatch") + 1])
+	elif "--bannerui" in args:
+		_banner_ui(args[args.find("--bannerui") + 1])
 	elif "--ranked" in args:
 		_ranked_test(args[args.find("--ranked") + 1], args[args.find("--ranked") + 2])
 	elif "--socwait" in args:
@@ -361,4 +365,68 @@ func _ranked_test(who: String, dir: String) -> void:
 	m.hud.quit.emit({"won": who == "host", "online": true, "score": {"L": 15, "R": 9}, "sets": {}, "tour": false})
 	await get_tree().create_timer(3.0).timeout
 	await _snap("%s/after_%s.png" % [dir, who])
+	get_tree().quit()
+
+func _banner_ui(dir: String) -> void:
+	DirAccess.make_dir_recursive_absolute(dir)
+	await get_tree().create_timer(1.2).timeout
+	var S = load("res://scripts/screens/summon.gd")
+	S.cur = "equilibre_celeste"
+	Save.bstate("equilibre_celeste").spark = 150
+	app.show_screen("gacha")
+	await get_tree().create_timer(0.8).timeout
+	await _snap(dir + "/banner.png")
+	app.screen._rates_sheet()
+	await get_tree().create_timer(0.5).timeout
+	await _snap(dir + "/rates.png")
+	for c in Kit.overlay.get_children():
+		c.queue_free()
+	app.screen._spark_sheet()
+	await get_tree().create_timer(0.5).timeout
+	await _snap(dir + "/spark.png")
+	for c in Kit.overlay.get_children():
+		c.queue_free()
+	var fx := Control.new()
+	fx.set_script(load("res://scripts/summon_fx.gd"))
+	Kit.overlay.add_child(fx)
+	fx.play([{"id": "liora", "tag": "NOUVEAU"}, {"id": "max", "tag": "+1 ★"}], false, {"ball": "arc_en_ciel", "particles": "etoiles"})
+	for k in [0.9, 2.0, 2.4, 3.4]:
+		while fx.t < k:
+			await get_tree().process_frame
+		await _snap("%s/summon_%s.png" % [dir, str(k)])
+	app.show_screen("roster")
+	get_tree().quit()
+
+func _spp_match(dir: String) -> void:
+	DirAccess.make_dir_recursive_absolute(dir)
+	await get_tree().create_timer(1.0).timeout
+	var own := {"lvl": 40, "stars": 3, "alloc": {}}
+	var opp := {"name": "Test", "diff": 3, "team": {"SPK": {"id": "solene", "own": own}, "SET": {"id": "liora", "own": own}, "DEF": {"id": "idriss", "own": own}}}
+	Save.S.team = {"SPK": "kaien", "SET": "aina", "DEF": "jade"}
+	for id in ["kaien", "aina", "jade"]:
+		Save.S.owned[id] = own.duplicate()
+	app.start_match({"opp": opp, "tour": false, "fmt": {"sets": 1, "pts": 15}, "stage": "arena", "role": "NONE"})
+	await get_tree().create_timer(0.6).timeout
+	var m = app.match_node
+	m.hud._end_intro()
+	var i := 0
+	var t0 := Time.get_ticks_msec()
+	var cut_done := false
+	while Time.get_ticks_msec() - t0 < 30000 and i < 40:
+		await get_tree().create_timer(0.45).timeout
+		var g = m.game
+		var interesting := false
+		for p in g.players:
+			if p.pose in ["spike", "dive", "serve"] or (g.state == "dead" and g.cel != null):
+				interesting = true
+		if not cut_done and Time.get_ticks_msec() - t0 > 12000:
+			cut_done = true
+			g.cutin_data = g.t.L.SPK
+			g.cutin_t0 = Time.get_ticks_msec() / 1000.0
+			await get_tree().create_timer(0.35).timeout
+			await _snap("%s/cutin.png" % dir)
+			continue
+		if interesting:
+			await _snap("%s/m_%02d.png" % [dir, i])
+			i += 1
 	get_tree().quit()

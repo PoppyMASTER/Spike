@@ -922,7 +922,7 @@ const FEED := {
 static func feed_text(e: Dictionary) -> String:
 	var d: Dictionary = e.data
 	match String(e.kind):
-		"splus": return FEED.splus % String(d.get("name", "?"))
+		"splus": return "a recruté %s, un %s !" % [String(d.get("name", "?")), String(d.get("rank", "S+"))]
 		"cup": return FEED.cup % String(d.get("cup", "coupe"))
 		"codex": return FEED.codex % int(d.get("n", 0))
 		"friend": return FEED.friend % String(d.get("name", "?"))
