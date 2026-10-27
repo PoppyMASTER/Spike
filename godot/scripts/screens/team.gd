@@ -49,7 +49,7 @@ func build() -> void:
 		var arc := AspectRatioContainer.new()
 		arc.ratio = 0.7
 		arc.stretch_mode = AspectRatioContainer.STRETCH_FIT
-		arc.alignment_vertical = AspectRatioContainer.ALIGNMENT_CENTER
+		arc.alignment_vertical = AspectRatioContainer.ALIGNMENT_BEGIN
 		arc.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		arc.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		arc.add_child(_slot(r))

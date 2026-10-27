@@ -15,7 +15,7 @@ Légende : `[ ]` à faire · `[x]` fait · ⭐ priorité · (S/M/L) = taille app
 
 - [ ] ⭐ **0.1 Recette de la build 20 sur téléphone** (S, Djebril) — Invoquer, Persos, apparition S++, tenues en match,
       sur téléphone **et** Z Fold 6 ouvert/fermé. Noter chaque bug avec une capture.
-- [ ] ⭐ **0.2 Chasse aux bugs automatique** (M) — lancer `--sim 50`, `--bot`, `--ui`, `--socui`, `--sppmatch` ;
+- [x] ⭐ **0.2 Chasse aux bugs automatique** (M) — lancer `--sim 50`, `--bot`, `--ui`, `--socui`, `--sppmatch` ;
       corriger toute erreur ou avertissement GDScript dans les journaux ; vérifier qu'aucun écran ne déborde en 2340×1080
       ni en 2208×1768. *Fini quand* : zéro `SCRIPT ERROR`, captures propres sur les deux formats.
 - [ ] ⭐ **0.3 En ligne fiable** (L) — monter un banc de test : deux clients Godot sans écran + un broker MQTT local

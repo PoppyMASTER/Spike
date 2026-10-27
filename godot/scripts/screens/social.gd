@@ -879,7 +879,7 @@ func _ranks(scope: String) -> void:
 	var d: Dictionary = await Kit.soc.req("GET", "/v1/leaderboard?scope=" + scope)
 	if _stale(g) or _err(d):
 		return
-	if d.has("my_rank") and scope != "friends":
+	if d.has("my_rank") and scope != "friends" and not d.rows.is_empty():
 		body.add_child(Kit.label("Ta place : %d" % int(d.my_rank), 15, Kit.YELLOW, Kit.font_c))
 	var sv := _scroll()
 	body.add_child(sv[0])
