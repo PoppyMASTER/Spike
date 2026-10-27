@@ -9,7 +9,8 @@ const NET := 2.43
 const BR := 0.12         # ball radius
 const REACH := 1.55
 const BUMPH := 0.58
-const SUBSTEP := 0.006
+const TICK := 1.0 / 180.0   # fixed physics step: same result whatever the frame rate
+var _acc := 0.0
 
 signal score_changed
 signal match_over(winner: String)
@@ -1226,9 +1227,12 @@ func step(dt: float) -> void:
 		return
 	if slow > gt:
 		dt *= 0.42
-	var sub := maxi(2, ceili(dt / SUBSTEP))
-	var h := dt / sub
-	for i in sub:
+	_acc += dt
+	var h := TICK
+	var guard := 0
+	while _acc >= TICK - 1e-9 and guard < 40:
+		_acc -= TICK
+		guard += 1
 		gt += h
 		if state == "live" or state == "serve":
 			if is_human(human):
