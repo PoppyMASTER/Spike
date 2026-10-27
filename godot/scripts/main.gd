@@ -16,7 +16,7 @@ func _ready() -> void:
 		_bot()
 		return
 	if "--check" in args:
-		for f in ["app", "art", "db", "game", "hud", "kit", "match", "save", "sfx", "summon_fx", "view", "screens/team", "screens/roster", "screens/summon", "screens/setup", "net", "updater", "social", "screens/social"]:
+		for f in ["app", "art", "db", "game", "hud", "kit", "match", "save", "sfx", "summon_fx", "view", "screens/team", "screens/roster", "screens/summon", "ui_draw", "screens/setup", "net", "updater", "social", "screens/social"]:
 			var s = load("res://scripts/%s.gd" % f)
 			print(f, " ok" if s and s.can_instantiate() else " FAILED")
 		get_tree().quit()

@@ -3,6 +3,7 @@ extends Control
 ## full-screen presentation for every S / S+. Tap "Passer" to jump to the results.
 
 signal done
+const UD := preload("res://scripts/ui_draw.gd")
 
 const RCOL := {"C": Color("cfd6de"), "B": Color("5cd18a"), "A": Color("4aa3ff"), "S": Color("c77dff"), "S+": Color("ffcf3c"), "S++": Color("ff6fd8")}
 const BALL := {"or": Color("ffcf3c"), "violet": Color("b06bff"), "glace": Color("8fe3ff"), "feu": Color("ff7a2b"), "ombre": Color("6a3fb0")}
@@ -12,14 +13,14 @@ var fx_parts := ""
 ## rank colour; S++ cycles through the rainbow
 func rcol(rk: String) -> Color:
 	if rk == "S++":
-		return Color.from_hsv(fmod(t * 0.35, 1.0), 0.55, 1.0)
+		return Color("f3c8ff").lerp(Color("ffe39a"), 0.5 + 0.5 * sin(t * 1.6))
 	return RCOL[rk]
 func ball_col() -> Color:
 	if fx_ball == "arc_en_ciel":
 		return Color.from_hsv(fmod(t * 0.6, 1.0), 0.5, 1.0)
 	return BALL.get(fx_ball, Color(1, 1, 1))
 func cut_len(id: String) -> float:
-	return 3.2 if DB.BY_ID[id].rank == "S++" else 1.9
+	return 4.2 if DB.BY_ID[id].rank == "S++" else 1.9
 
 var res: Array
 var best := "C"
@@ -188,49 +189,25 @@ func _draw() -> void:
 				draw_string(Kit.font_d, rect.position + Vector2(6, 24), c.rank, HORIZONTAL_ALIGNMENT_LEFT, -1, 22, rc)
 			if DB.rank_idx(c.rank) >= 3:
 				draw_rect(rect.grow(4), Color(rc, 0.5 + 0.3 * sin(t * 6)), false, 3.0)
-	# S / S+ presentation
+	# S / S+ presentation (S++ has its own reveal)
 	if cut != null:
 		var e: float = t - cut.t0
-		var a := minf(1.0, e / 0.15)
 		var ch: Dictionary = DB.BY_ID[cut.id]
+		if ch.rank == "S++":
+			_reveal_spp(ch, e, s)
+			return
+		var a := minf(1.0, e / 0.15)
 		var rc: Color = rcol(ch.rank)
-		var spp: bool = ch.rank == "S++"
-		draw_rect(Rect2(Vector2.ZERO, s), Color(0.02, 0.03, 0.07, (0.85 if spp else 0.6) * a))
+		draw_rect(Rect2(Vector2.ZERO, s), Color(0.02, 0.03, 0.07, 0.6 * a))
 		draw_set_transform(Vector2(s.x / 2, s.y / 2), -0.14, Vector2.ONE)
-		if spp:
-			# rainbow stripes sliding behind the character
-			for i in 7:
-				var hy := -s.y * 0.3 + i * s.y * 0.6 / 7.0
-				var off := fmod(e * 900.0 + i * 140.0, s.x * 2.0) - s.x
-				draw_rect(Rect2(-s.x + off * 0.1, hy, s.x * 2, s.y * 0.6 / 7.0 + 1), Color(Color.from_hsv(fmod(float(i) / 7.0 + e * 0.2, 1.0), 0.6, 1.0), 0.75 * a))
-		else:
-			draw_rect(Rect2(-s.x, -s.y * 0.23, s.x * 2, s.y * 0.46), Color(rc, 0.85 * a))
+		draw_rect(Rect2(-s.x, -s.y * 0.23, s.x * 2, s.y * 0.46), Color(rc, 0.85 * a))
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-		if spp and e < 0.5:
-			# the screen "cracks" open
-			var rs := RandomNumberGenerator.new()
-			rs.seed = 3
-			var ctr := s / 2.0
-			for i in 12:
-				var an := rs.randf() * TAU
-				var p0 := ctr
-				var pts := PackedVector2Array([p0])
-				for j in 5:
-					p0 += Vector2(cos(an + rs.randf_range(-0.5, 0.5)), sin(an + rs.randf_range(-0.5, 0.5))) * s.x * 0.12
-					pts.append(p0)
-				draw_polyline(pts, Color(1, 1, 1, 1.0 - e * 2.0), 3.0)
-			draw_rect(Rect2(Vector2.ZERO, s), Color(1, 1, 1, maxf(0.0, 0.8 - e * 2.0)))
 		var slide := (1.0 - ease(minf(1.0, e / 0.45), 0.3)) * s.x * 0.6
-		var act := Art.action(cut.id) if spp else null
-		if act:
-			var ah := s.y * 1.05
-			var aw := ah * act.get_width() / act.get_height()
-			draw_texture_rect(act, Rect2(s.x * 0.05 + slide, s.y - ah + sin(e * 2.0) * 6.0, aw, ah), false, Color(1, 1, 1, a))
-		var cutout := Art.cutout(cut.id) if not act else null
+		var cutout := Art.cutout(cut.id)
 		var S := minf(s.y * 1.0, s.x * 0.5)
 		if cutout:
 			draw_texture_rect(cutout, Rect2(s.x * 0.08 + slide, s.y - S, S, S), false, Color(1, 1, 1, a))
-		elif not act:
+		else:
 			draw_texture_rect(Art.card(cut.id), Rect2(s.x * 0.12 + slide, s.y * 0.2, S * 0.6, S * 0.6), false, Color(1, 1, 1, a))
 		var tx := s.x * 0.55 + slide
 		draw_string(Kit.font_c, Vector2(tx, s.y * 0.36), ("NOUVELLE RECRUE" if cut.tag == "NOUVEAU" else "RECRUE") + " · " + DB.role_name(ch.role).to_upper(), HORIZONTAL_ALIGNMENT_LEFT, -1, 22, Color(1, 1, 1, a))
@@ -238,12 +215,80 @@ func _draw() -> void:
 		draw_string(Kit.font_d, Vector2(tx, s.y * 0.53), ch.rank, HORIZONTAL_ALIGNMENT_LEFT, -1, 110, Color(1, 1, 1, a))
 		draw_string(Kit.font_d, Vector2(tx, s.y * 0.64), ch.name.to_upper(), HORIZONTAL_ALIGNMENT_LEFT, -1, 44, Color(1, 1, 1, a))
 		draw_string(Kit.font_c, Vector2(tx, s.y * 0.71), "« %s »" % ch.title, HORIZONTAL_ALIGNMENT_LEFT, -1, 22, Color(1, 1, 1, 0.85 * a))
-		var line := String(ch.get("voice", {}).get("summon", ""))
-		if line != "" and e > 0.6:
-			var la := minf(1.0, (e - 0.6) / 0.3) * a
-			var shown := line.substr(0, int((e - 0.6) * 40.0))
-			draw_rect(Rect2(tx - 12, s.y * 0.76, s.x * 0.42, 54), Color(0, 0, 0, 0.55 * la))
-			draw_string(Kit.font_c, Vector2(tx, s.y * 0.76 + 36), "« " + shown + " »", HORIZONTAL_ALIGNMENT_LEFT, s.x * 0.4, 24, Color(rc.lerp(Color.WHITE, 0.6), la))
+
+## S++ reveal: night backdrop tinted by the character's element, a pillar of light opens,
+## the full-body skin rises in, then name / title / stars / quote fade in one after the other.
+func _reveal_spp(ch: Dictionary, e: float, s: Vector2) -> void:
+	var ec := Color(1, 0.85, 0.5)
+	var el = ch.get("elem")
+	if el is Dictionary:
+		var p := String(el.c).split(",")
+		ec = Color8(int(p[0]), int(p[1]), int(p[2]))
+	var a := minf(1.0, e / 0.25)
+	# backdrop
+	draw_rect(Rect2(Vector2.ZERO, s), Color(0.02, 0.02, 0.05, a))
+	var cx := s.x * 0.34
+	var hr := s.y * 0.95
+	draw_texture_rect(UD.radial(), Rect2(cx - hr, s.y * 0.48 - hr, hr * 2, hr * 2), false, Color(ec, 0.32 * a))
+	# slow motes rising in the element colour
+	for i in 46:
+		var sd := float(i) * 7.31
+		var px := fmod(absf(sin(sd) * 4375.85), 1.0) * s.x
+		var sp := 18.0 + fmod(absf(cos(sd) * 913.1), 1.0) * 40.0
+		var py := s.y + 10.0 - fmod(fmod(absf(sin(sd * 1.9) * 2342.1), 1.0) * s.y + e * sp, s.y + 20.0)
+		draw_circle(Vector2(px + sin(e + i) * 10.0, py), 1.2 + (i % 3) * 0.8, Color(ec.lerp(Color.WHITE, 0.6), (0.25 + 0.3 * sin(e * 2.0 + i)) * a))
+	# pillar of light that widens then settles into a soft beam
+	var pw := s.x * (0.02 + 0.5 * ease(minf(1.0, e / 0.5), 0.4)) * (1.0 if e < 0.5 else maxf(0.35, 1.0 - (e - 0.5) * 1.3))
+	UD.beam(self, cx, pw, s.y, Color(ec.lerp(Color.WHITE, 0.5), (0.22 if e > 0.5 else 0.6) * a))
+	if e < 0.45:
+		draw_rect(Rect2(Vector2.ZERO, s), Color(1, 1, 1, 0.75 * (1.0 - e / 0.45)))
+	# the character
+	var tex: Texture2D = Art.skin(ch.id)
+	if tex == null:
+		tex = Art.action(ch.id)
+	var k := ease(clampf((e - 0.25) / 0.7, 0, 1), 0.35)
+	if tex and e > 0.25:
+		var hh := s.y * 0.94
+		var ww := hh * tex.get_width() / tex.get_height()
+		var r := Rect2(cx - ww / 2, s.y - hh + (1.0 - k) * 60.0 + sin(e * 1.6) * 4.0, ww, hh)
+		for i in 3:   # soft halo around the silhouette
+			var g := 6.0 + i * 7.0
+			draw_texture_rect(tex, r.grow(g), false, Color(ec.r, ec.g, ec.b, 0.10 * k))
+		draw_texture_rect(tex, r, false, Color(1, 1, 1, k))
+	# text column
+	var tx := s.x * 0.6
+	var fade := func(t0: float) -> float: return clampf((e - t0) / 0.35, 0, 1)
+	var gold := Color("f3d58c")
+	var a1: float = fade.call(0.7)
+	draw_string(Kit.font_c, Vector2(tx, s.y * 0.24), ("NOUVELLE RECRUE" if cut.tag == "NOUVEAU" else "RECRUE · " + String(cut.tag)) + "  ·  " + DB.role_name(ch.role).to_upper(), HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(1, 1, 1, 0.75 * a1))
+	var a2: float = fade.call(0.9)
+	var bw := 92.0
+	var bp := Vector2(tx, s.y * 0.28)
+	draw_rect(Rect2(bp, Vector2(bw, 40)), Color(0.08, 0.06, 0.14, 0.9 * a2))
+	draw_rect(Rect2(bp, Vector2(bw, 40)), Color(gold, a2), false, 2.0)
+	draw_string(Kit.font_d, bp + Vector2(0, 32), "S++", HORIZONTAL_ALIGNMENT_CENTER, bw, 30, Color(rcol("S++"), a2))
+	var a3: float = fade.call(1.05)
+	var nm: String = ch.name
+	draw_string(Kit.font_s, Vector2(tx + (1.0 - a3) * 30.0, s.y * 0.47), nm, HORIZONTAL_ALIGNMENT_LEFT, s.x * 0.38, 66, Color(1, 1, 1, a3))
+	draw_string(Kit.font_c, Vector2(tx, s.y * 0.535), String(ch.title).to_upper(), HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color(gold, a3))
+	draw_line(Vector2(tx, s.y * 0.565), Vector2(tx + s.x * 0.3 * a3, s.y * 0.565), Color(gold, 0.6 * a3), 1.5)
+	for i in 5:
+		var ai: float = fade.call(1.3 + i * 0.1)
+		_star(Vector2(tx + 14 + i * 30, s.y * 0.615), 11.0 * (0.6 + 0.4 * ai), Color(gold, ai))
+	var line := String(ch.get("voice", {}).get("summon", ""))
+	var a4: float = fade.call(2.0)
+	if line != "":
+		draw_string(Kit.font_si, Vector2(tx, s.y * 0.72), "« " + line + " »", HORIZONTAL_ALIGNMENT_LEFT, s.x * 0.37, 22, Color(1, 1, 1, 0.92 * a4))
+		draw_string(Kit.font_si, Vector2(tx + 20, s.y * 0.72 + 34), "— " + nm, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(gold, 0.8 * a4))
+	if e > 2.6:
+		draw_string(Kit.font_c, Vector2(0, s.y - 22), "Touche pour continuer", HORIZONTAL_ALIGNMENT_CENTER, s.x, 15, Color(1, 1, 1, 0.35 + 0.25 * sin(e * 3.0)))
+
+func _star(c0: Vector2, r: float, col: Color) -> void:
+	var pts := PackedVector2Array()
+	for i in 10:
+		var an := -PI / 2 + i * PI / 5
+		pts.append(c0 + Vector2(cos(an), sin(an)) * (r if i % 2 == 0 else r * 0.45))
+	draw_colored_polygon(pts, col)
 
 ## banner particles drifting over the whole sequence
 func _particles(s: Vector2) -> void:

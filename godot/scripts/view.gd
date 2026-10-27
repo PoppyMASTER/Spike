@@ -495,6 +495,7 @@ var _hip := Vector2.ZERO
 var _cr := 1.0
 var _sr := 0.0
 var _o: Dictionary = {}      # outfit of the player being drawn
+var _k: Dictionary = {}      # parsed skin kit (outfit.kit) of the player being drawn
 
 func tf(pt: Vector2) -> Vector2:
 	var x := pt.x
@@ -554,6 +555,12 @@ func draw_body(ci: CanvasItem, p, pz: Dictionary, f: float) -> void:
 	var olw := maxf(1.0, u * 0.028)
 	var so: Vector2 = s.so
 	_o = o
+	_k = _kit(p.c)
+	if not _k.is_empty():
+		tc.sh = _k.shorts
+		tc.sock = _k.socks
+		if _k.has("sash"):
+			_sash(ci, p, s, pz)
 	# back leg + arm
 	_leg(ci, s.lg2, true, hip, tc, skin, dskin, acc, olw)
 	_arm(ci, s.ar2, true, so, tc, skin, dskin, acc, olw)
@@ -564,7 +571,9 @@ func draw_body(ci: CanvasItem, p, pz: Dictionary, f: float) -> void:
 	var tp := PackedVector2Array([tf(hip - nx * 0.12), tf(hip + nx * 0.13), tf(sh + nx * 0.17), tf(sh - nx * 0.15)])
 	var ol := tp.duplicate()
 	ol.append(tp[0])
-	if o.is_empty():
+	if not _k.is_empty():
+		_kit_torso(ci, tp, u, skin)
+	elif o.is_empty():
 		ci.draw_colored_polygon(tp, tc.jer)
 		ci.draw_colored_polygon(PackedVector2Array([tp[0], tp[3], tp[3].lerp(tp[2], 0.45), tp[0].lerp(tp[1], 0.45)]), tc.jer2)
 	else:
@@ -577,7 +586,9 @@ func draw_body(ci: CanvasItem, p, pz: Dictionary, f: float) -> void:
 		ci.draw_string(font_d, Vector2(-u * 0.1, u * 0.08), str(p.c.num), HORIZONTAL_ALIGNMENT_CENTER, u * 0.2, int(u * 0.2), acc)
 		ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	dot(ci, (tf(hip - nx * 0.13 + Vector2(0, 0.02)) + tf(hip + nx * 0.14 + Vector2(0, 0.02))) / 2.0, 0.13 * u, tc.sh)
-	if not o.is_empty():
+	if not _k.is_empty():
+		pass
+	elif not o.is_empty():
 		var accs: Array = o.get("accessories", [])
 		if "collier" in accs:
 			dot(ci, tf(s.nk + Vector2(0.03, -0.05)), 0.035 * u, Color(String(o.accent)))
@@ -587,6 +598,8 @@ func draw_body(ci: CanvasItem, p, pz: Dictionary, f: float) -> void:
 			_jacket(ci, p, s, pz, Color(String(o.main)), u, olw)
 	# front leg, head, front arm
 	_leg(ci, s.lg1, false, hip, tc, skin, dskin, acc, olw)
+	if not _k.is_empty():
+		_kit_skirt(ci, p, s, pz, olw)
 	var hc := tf(s.hd)
 	limb(ci, s.sh, s.nk, 0.07, skin, false, olw)
 	ci.draw_set_transform(hc, f * (pz.lean * 0.55 + pz.head) + f * _rot, Vector2.ONE)
@@ -599,6 +612,9 @@ func _leg(ci: CanvasItem, lg: Array, back: bool, hip: Vector2, tc: Dictionary, s
 	var k: Vector2 = lg[0]
 	var ft: Vector2 = lg[1]
 	limb(ci, hip, k, 0.125, sk, true, olw)
+	if not _k.is_empty():
+		_kit_leg(ci, hip, k, ft, back, sk, olw)
+		return
 	limb(ci, hip, hip.lerp(k, 0.4), 0.155, (tc.sh as Color).darkened(0.25) if back else tc.sh, false, olw)
 	var mid := k.lerp(ft, 0.5)
 	limb(ci, k, mid, 0.095, sk, true, olw)
@@ -612,6 +628,9 @@ func _arm(ci: CanvasItem, ar: Array, back: bool, so: Vector2, tc: Dictionary, sk
 	var sk := dskin if back else skin
 	var el: Vector2 = ar[0]
 	var hd: Vector2 = ar[1]
+	if not _k.is_empty():
+		_kit_arm(ci, ar, back, so, tc, sk, olw)
+		return
 	var cut := String(_o.get("cut", "maillot")) if not _o.is_empty() else "maillot"
 	var sleeve: Color = tc.jer2 if back else tc.jer
 	if cut == "veste_ouverte" or cut == "manches_longues":
@@ -643,6 +662,9 @@ func quad_pts(a: Vector2, c: Vector2, b: Vector2, n := 6) -> PackedVector2Array:
 func draw_mini_head(ci: CanvasItem, c: Dictionary, r: float, f: float) -> void:
 	var hair := Color(c.hair)
 	var st: int = int(c.style)
+	var kk := _kit(c)
+	if kk.has("ribbons") and r > 3:
+		_ribbons(ci, kk, r, f, hair)
 	if st == 3:
 		ellipse(ci, Vector2(-f * r * 1.15, r * 0.15), r * 0.38, r * 0.75, hair)
 	if st == 1:
@@ -672,6 +694,11 @@ func draw_mini_head(ci: CanvasItem, c: Dictionary, r: float, f: float) -> void:
 		var sw := sin(g.gt * 7.0) * r * 0.15
 		ci.draw_colored_polygon(PackedVector2Array([Vector2(-f * r * 0.95, -r * 0.4), Vector2(-f * r * 1.7, r * 0.2 + sw), Vector2(-f * r * 1.5, r * 0.45 + sw), Vector2(-f * r * 0.9, -r * 0.15)]), ocol)
 		dot(ci, Vector2(-f * r * 0.92, -r * 0.3), r * 0.2, ocol)
+	if kk.get("hairpin", "") == "lune" and r > 3:
+		var hp := Vector2(-f * r * 0.55, -r * 0.95)
+		dot(ci, hp, r * 0.26, Color("eef0ff"))
+		dot(ci, hp + Vector2(f * r * 0.1, -r * 0.06), r * 0.21, hair)
+		dot(ci, hp + Vector2(-f * r * 0.12, r * 0.18), r * 0.1, Color("f4f1ff"))
 	if "boucle_oreille" in oacc:
 		dot(ci, Vector2(f * r * 0.15, r * 0.45), r * 0.11, Color("e8c15a"))
 	if "lunettes" in oacc and r > 4:
@@ -1116,3 +1143,219 @@ func draw_trails(ci: CanvasItem) -> void:
 			CZ = p.z
 			var pc := _trail_col(p, 0)
 			ellipse(ci, Vector2(X(p.x), Y(0)), K * 0.45, K * 0.12, Color(pc, 0.25 + 0.12 * sin(g.gt * 4.0)))
+
+
+# ---------------------------------------------------------------- skin kits (outfit.kit): piece-by-piece outfits
+## A kit describes visible pieces in plain data (see data/SKINS.md). Every colour is parsed once here.
+var _kits := {}
+func _kit(c: Dictionary) -> Dictionary:
+	var id: String = c.get("id", "")
+	if _kits.has(id):
+		return _kits[id]
+	var out := {}
+	var o = c.get("outfit")
+	if o is Dictionary and o.get("kit") is Dictionary:
+		var k: Dictionary = o.kit
+		var C := func(v, d: String) -> Color: return Color(String(v)) if v != null and String(v) != "" else Color(d)
+		var top: Dictionary = k.get("top", {})
+		out.top = C.call(top.get("color"), "#f5f1e8")
+		out.panel = C.call(top.get("panel"), "") if top.has("panel") else null
+		out.trim = C.call(top.get("trim"), "#222222")
+		out.motif = String(top.get("motif", ""))
+		out.motif_c = C.call(top.get("motif_color"), "#d6ad58")
+		out.bare = String(top.get("shoulders", "")) == "nues"
+		var sl: Dictionary = k.get("sleeves", {})
+		out.sleeve = String(sl.get("type", "courtes"))
+		out.sleeve_c = C.call(sl.get("color"), String(top.get("color", "#f5f1e8")))
+		out.sleeve_t = C.call(sl.get("trim"), "#d6ad58")
+		out.forearm = C.call(k.get("forearm"), "") if k.has("forearm") else null
+		out.bracelet = C.call(k.get("bracelet"), "") if k.has("bracelet") else null
+		if k.get("belt") is Dictionary:
+			out.belt = C.call(k.belt.get("color"), "#e0b54a")
+			out.tassels = bool(k.belt.get("tassels", true))
+		if k.get("skirt") is Dictionary:
+			out.skirt = C.call(k.skirt.get("color"), "#ffffff")
+			out.skirt_u = C.call(k.skirt.get("under"), "") if k.skirt.has("under") else null
+			out.skirt_t = C.call(k.skirt.get("trim"), "#d6ad58")
+			out.skirt_len = float(k.skirt.get("len", 0.25))
+			out.skirt_motif = String(k.skirt.get("motif", ""))
+		if k.get("sash") is Dictionary:
+			out.sash = C.call(k.sash.get("color"), "#a58fd8")
+			out.sash_len = float(k.sash.get("len", 0.5))
+		var sh: Dictionary = k.get("shorts", {})
+		out.shorts = C.call(sh.get("color"), "#16161a")
+		out.shorts_len = float(sh.get("len", 0.45))
+		out.stripe = C.call(sh.get("stripe"), "") if sh.has("stripe") else null
+		out.strap = C.call(k.get("thigh_strap"), "") if k.has("thigh_strap") else null
+		out.socks = C.call(k.get("socks"), "#ffffff")
+		out.sock_len = float(k.get("sock_len", 0.35))
+		var shoes: Array = k.get("shoes", ["#ffffff", "#222222"])
+		out.shoe = C.call(shoes[0], "#ffffff")
+		out.shoe2 = C.call(shoes[1] if shoes.size() > 1 else null, "#222222")
+		if k.get("ribbons") is Dictionary:
+			out.ribbons = C.call(k.ribbons.get("color"), "#e0b54a")
+			out.ribbon_len = float(k.ribbons.get("len", 2.5))
+			out.ribbon_n = int(k.ribbons.get("n", 1))
+		out.hairpin = String(k.get("hairpin", ""))
+	_kits[id] = out
+	return out
+
+func _kit_torso(ci: CanvasItem, tp: PackedVector2Array, u: float, skin: Color) -> void:
+	ci.draw_colored_polygon(tp, _k.top)
+	if _k.panel != null:   # front chest panel
+		ci.draw_colored_polygon(PackedVector2Array([_tp(tp, 0.5, 0.35), _tp(tp, 1, 0.3), _tp(tp, 1, 0.92), _tp(tp, 0.62, 0.95)]), _k.panel)
+	if _k.bare:            # bare shoulders: skin at the top of the back
+		ci.draw_colored_polygon(PackedVector2Array([_tp(tp, 0, 0.8), _tp(tp, 0.55, 1.0), _tp(tp, 0, 1.0)]), skin)
+	# crossover collar from the neck to the front hip
+	var w := maxf(1.5, u * 0.045)
+	ci.draw_line(_tp(tp, 0.55, 1.0), _tp(tp, 1.0, 0.3), _k.trim, w)
+	ci.draw_line(_tp(tp, 0.35, 1.0), _tp(tp, 0.55, 1.0), _k.trim, w)
+	var mc: Color = _k.motif_c
+	if u > 18:
+		match _k.motif:
+			"nuages":
+				for q in [Vector2(0.28, 0.62), Vector2(0.58, 0.38), Vector2(0.3, 0.28)]:
+					var c0 := _tp(tp, q.x, q.y)
+					ci.draw_arc(c0, u * 0.035, PI, TAU, 6, mc, maxf(1.0, u * 0.014))
+					ci.draw_arc(c0 + Vector2(u * 0.04, u * 0.005), u * 0.028, PI, TAU, 6, mc, maxf(1.0, u * 0.014))
+				# rising sun on the back
+				var sc := _tp(tp, 0.18, 0.78)
+				dot(ci, sc, u * 0.045, Color(mc, 0.9))
+				for i in 5:
+					var a := PI + i * PI / 4
+					ci.draw_line(sc + Vector2(cos(a), sin(a)) * u * 0.055, sc + Vector2(cos(a), sin(a)) * u * 0.085, mc, maxf(1.0, u * 0.012))
+			"lunes":
+				for q in [Vector2(0.3, 0.55), Vector2(0.75, 0.2)]:
+					var c0 := _tp(tp, q.x, q.y)
+					dot(ci, c0, u * 0.04, mc)
+					dot(ci, c0 + Vector2(_f * u * 0.016, -u * 0.01), u * 0.034, _k.top)
+	if _k.has("belt"):
+		var bw := maxf(2.0, u * 0.06)
+		ci.draw_line(_tp(tp, -0.05, 0.1), _tp(tp, 1.05, 0.08), _k.belt, bw)
+		ci.draw_line(_tp(tp, -0.05, 0.16), _tp(tp, 1.05, 0.14), Color(_k.belt, 0.75), bw * 0.6)
+
+func _kit_leg(ci: CanvasItem, hip: Vector2, k: Vector2, ft: Vector2, back: bool, sk: Color, olw: float) -> void:
+	var dk := 0.22 if back else 0.0
+	var shc: Color = (_k.shorts as Color).darkened(dk)
+	var lg: float = _k.shorts_len
+	limb(ci, hip, hip.lerp(k, lg), 0.15 if lg < 0.6 else 0.135, shc, false, olw)
+	if _k.stripe != null:
+		limb(ci, hip.lerp(k, 0.08), hip.lerp(k, lg * 0.97), 0.03, (_k.stripe as Color).darkened(dk), false, olw)
+		limb(ci, hip.lerp(k, lg * 0.95), hip.lerp(k, lg), 0.12, (_k.stripe as Color).darkened(dk), false, olw)
+	if _k.strap != null and not back:
+		limb(ci, hip.lerp(k, 0.62), hip.lerp(k, 0.68), 0.135, _k.strap, false, olw)
+		dot(ci, tf(hip.lerp(k, 0.65) + Vector2(0.06, 0)), 0.03 * _u, Color("e9ecf5"))
+	var mid := k.lerp(ft, 1.0 - float(_k.sock_len))
+	limb(ci, k, mid, 0.095, sk, true, olw)
+	limb(ci, mid, ft, 0.097, (_k.socks as Color).darkened(dk), true, olw)
+	dot(ci, tf(k), 0.05 * _u, sk.darkened(0.15))
+	var fc := tf(ft) + Vector2(_f * 0.04 * _u, 0)
+	ellipse(ci, fc, 0.11 * _u, 0.05 * _u, (_k.shoe as Color).darkened(dk))
+	ellipse(ci, fc + Vector2(_f * 0.03 * _u, 0.02 * _u), 0.085 * _u, 0.022 * _u, (_k.shoe2 as Color).darkened(dk))
+
+func _kit_arm(ci: CanvasItem, ar: Array, back: bool, so: Vector2, tc: Dictionary, sk: Color, olw: float) -> void:
+	var el: Vector2 = ar[0]
+	var hd: Vector2 = ar[1]
+	var dk := 0.18 if back else 0.0
+	var sc: Color = (_k.sleeve_c as Color).darkened(dk)
+	var st: Color = (_k.sleeve_t as Color).darkened(dk)
+	match _k.sleeve:
+		"kimono":
+			# wide short sleeve, trimmed edge, then bare arm
+			limb(ci, so, el, 0.08, sk, true, olw)
+			limb(ci, so, so.lerp(el, 0.62), 0.17, sc, true, olw)
+			limb(ci, so.lerp(el, 0.58), so.lerp(el, 0.66), 0.17, st, false, olw)
+		"detachees":
+			# bare shoulder, detached sleeve from mid upper-arm, flared at the wrist
+			limb(ci, so, el, 0.08, sk, true, olw)
+			limb(ci, so.lerp(el, 0.55), el, 0.1, sc, true, olw)
+		"longues":
+			limb(ci, so, el, 0.105, sc, true, olw)
+		_:
+			limb(ci, so, so.lerp(el, 0.45), 0.1, sc, true, olw)
+			limb(ci, so.lerp(el, 0.4), el, 0.08, sk, true, olw)
+	# forearm
+	if _k.sleeve == "detachees":
+		limb(ci, el, hd, 0.1, sc, true, olw)
+		var a := tf(el.lerp(hd, 0.75))
+		var b := tf(hd)
+		var nrm := (b - a).normalized().orthogonal() * 0.09 * _u
+		ci.draw_colored_polygon(PackedVector2Array([a + nrm * 0.6, b + nrm * 1.3, b - nrm * 1.3, a - nrm * 0.6]), st)
+	elif _k.sleeve == "longues":
+		limb(ci, el, hd, 0.088, sc, true, olw)
+	elif _k.forearm != null:
+		limb(ci, el, hd, 0.075, sk, true, olw)
+		limb(ci, el.lerp(hd, 0.08), el.lerp(hd, 0.88), 0.088, (_k.forearm as Color).darkened(dk), false, olw)
+	else:
+		limb(ci, el, hd, 0.072, sk, true, olw)
+	if _k.bracelet != null:
+		limb(ci, el.lerp(hd, 0.82), el.lerp(hd, 0.88), 0.096, _k.bracelet, false, olw)
+	if tc.has("team") and not back:
+		limb(ci, so.lerp(el, 0.7), so.lerp(el, 0.8), 0.11 if _k.sleeve != "kimono" else 0.085, tc.team, false, olw)   # team armband
+	dot(ci, tf(hd), 0.045 * _u, sk)
+
+## tunic / skirt over the hips, flaring backwards with speed; optional under-layer and belt tassels
+func _kit_skirt(ci: CanvasItem, p, s: Dictionary, pz: Dictionary, olw: float) -> void:
+	if not _k.has("skirt") and not _k.has("belt"):
+		return
+	var ax := Vector2(sin(pz.lean), cos(pz.lean))
+	var nx := Vector2(ax.y, -ax.x)
+	var hip: Vector2 = s.hip
+	var swing := clampf(-absf(p.vx) * 0.035, -0.18, 0.0) + sin(g.gt * 4.0) * 0.012
+	if pz.ground < 0.5:
+		swing -= 0.06
+	if _k.has("skirt"):
+		var ln: float = _k.skirt_len
+		var top_f := hip + nx * 0.15 + ax * 0.06
+		var top_b := hip - nx * 0.14 + ax * 0.06
+		if _k.skirt_u != null:
+			var ul := ln + 0.06
+			ci.draw_colored_polygon(PackedVector2Array([tf(top_f), tf(hip + nx * 0.2 - ax * ul * 0.8), tf(hip - nx * 0.22 - ax * ul + Vector2(swing * 1.2, 0)), tf(top_b)]), _k.skirt_u)
+		var bf := hip + nx * 0.19 - ax * ln * 0.75
+		var bb := hip - nx * 0.21 - ax * ln + Vector2(swing, 0)
+		var poly := PackedVector2Array([tf(top_f), tf(bf), tf(bf.lerp(bb, 0.5) - ax * 0.03), tf(bb), tf(top_b)])
+		ci.draw_colored_polygon(poly, _k.skirt)
+		var ol := poly.duplicate()
+		ol.append(poly[0])
+		ci.draw_polyline(ol, Color(OUTL, 0.45), olw * 0.8)
+		ci.draw_polyline(PackedVector2Array([tf(bf), tf(bf.lerp(bb, 0.5) - ax * 0.03), tf(bb)]), _k.skirt_t, maxf(1.5, _u * 0.035))
+		if _k.skirt_motif == "nuages" and _u > 18:
+			var c0 := tf(hip.lerp(bb, 0.55))
+			ci.draw_arc(c0, _u * 0.035, PI, TAU, 6, _k.skirt_t, maxf(1.0, _u * 0.014))
+	if _k.has("belt") and bool(_k.get("tassels", true)):
+		var kn := hip - nx * 0.15 + ax * 0.04
+		for i in 2:
+			var tl := kn + Vector2(swing * 0.8 - i * 0.03, -0.2 - i * 0.04)
+			ci.draw_line(tf(kn), tf(tl), _k.belt, maxf(1.0, _u * 0.02))
+			ellipse(ci, tf(tl), _u * 0.03, _u * 0.05, (_k.belt as Color).lightened(0.15))
+
+## long sash hanging from the back of the hips (drawn behind the body)
+func _sash(ci: CanvasItem, p, s: Dictionary, pz: Dictionary) -> void:
+	var ax := Vector2(sin(pz.lean), cos(pz.lean))
+	var nx := Vector2(ax.y, -ax.x)
+	var base: Vector2 = s.hip - nx * 0.16 + ax * 0.05
+	var sp := clampf(absf(p.vx) / 6.0, 0.0, 1.0)
+	var ln: float = _k.sash_len
+	var a := PackedVector2Array()
+	var b := PackedVector2Array()
+	for i in 7:
+		var t := float(i) / 6.0
+		var c := base + Vector2(-t * (0.08 + sp * 0.5) * ln * 2.0, -t * ln * (1.0 - sp * 0.5)) + Vector2(sin(g.gt * 5.0 - i) * 0.025 * t, 0)
+		var w := 0.06 + t * 0.05
+		a.append(tf(c + Vector2(w, 0)))
+		b.append(tf(c - Vector2(w, 0)))
+	b.reverse()
+	a.append_array(b)
+	ci.draw_colored_polygon(a, Color(_k.sash, 0.85))
+
+## long hair ribbons trailing from the back of the head (head-local coords, r = head radius)
+func _ribbons(ci: CanvasItem, kk: Dictionary, r: float, f: float, hair: Color) -> void:
+	var n: int = kk.ribbon_n
+	var ln: float = kk.ribbon_len
+	for j in n:
+		var pts := PackedVector2Array()
+		for i in 8:
+			var t := float(i) / 7.0
+			pts.append(Vector2(-f * r * (0.9 + t * ln), -r * 0.35 + t * r * (0.6 + j * 0.5) + sin(g.gt * 7.0 - i * 0.8 + j) * r * 0.2 * t))
+		ci.draw_polyline(pts, (kk.ribbons as Color).darkened(0.12 * j), maxf(1.5, r * 0.24), true)
+		dot(ci, pts[7], r * 0.16, (kk.ribbons as Color).lightened(0.1))

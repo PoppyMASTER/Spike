@@ -9,7 +9,8 @@ var grid: GridContainer
 var scroll: ScrollContainer
 
 const RK := {"C": ["a7b0ba", "59626e", "c3cad2", "1b2129"], "B": ["6fe08c", "1e7a3e", "5cd18a", "06240f"], "A": ["6db8ff", "1f4fb3", "4aa3ff", "04173a"],
-	"S": ["d39bff", "6a2bb8", "b673ff", "1f0638"], "S+": ["fff1a6", "d99a12", "ffc21a", "2a1700"]}
+	"S": ["d39bff", "6a2bb8", "b673ff", "1f0638"], "S+": ["fff1a6", "d99a12", "ffc21a", "2a1700"],
+	"S++": ["ffd1f4", "7a2bd9", "ff6fd8", "1a0630"]}
 
 class PCard:
 	extends Control

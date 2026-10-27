@@ -45,10 +45,21 @@ func action(id: String) -> Texture2D:
 		_act[id] = load(p) if ResourceLoader.exists(p) else null
 	return _act[id]
 
+## full-body skin art (transparent cut-out): res://art/skins/<id>.png
+var _skin := {}
+func skin(id: String) -> Texture2D:
+	if not _skin.has(id):
+		var p := "res://art/skins/%s.png" % id
+		_skin[id] = load(p) if ResourceLoader.exists(p) else null
+	return _skin[id]
+
 ## banner images: kind = "key" (16:9 key art) or "logo"
+var _ban := {}
 func banner_tex(id: String, kind: String) -> Texture2D:
 	var p := "res://art/banners/%s_%s.png" % [id, kind]
-	return load(p) if ResourceLoader.exists(p) else null
+	if not _ban.has(p):     # cached: a texture freed right after a draw call renders white
+		_ban[p] = load(p) if ResourceLoader.exists(p) else null
+	return _ban[p]
 
 func _load_illus(id: String) -> Texture2D:
 	var rp := "res://art/%s.png" % id

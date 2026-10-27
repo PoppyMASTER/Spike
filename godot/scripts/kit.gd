@@ -10,11 +10,13 @@ const CTA := Color("ff6a2b")
 const SKY := Color("4fc3ff")
 const FG := Color("f4f7ff")
 const MUTED := Color("9fb3d9")
-const RANK_STYLE := {"C": ["a7b0ba", "59626e"], "B": ["6fe08c", "1e7a3e"], "A": ["6db8ff", "1f4fb3"], "S": ["d39bff", "6a2bb8"], "S+": ["fff1a6", "d99a12"]}
+const RANK_STYLE := {"C": ["a7b0ba", "59626e"], "B": ["6fe08c", "1e7a3e"], "A": ["6db8ff", "1f4fb3"], "S": ["d39bff", "6a2bb8"], "S+": ["fff1a6", "d99a12"], "S++": ["ffd1f4", "7a2bd9"]}
 
 var font_d: Font      # Anton (display)
 var font_c: Font      # Barlow Condensed Bold (titles, labels)
 var font_i: Font      # Inter (info)
+var font_s: Font      # Cormorant Garamond Bold (event / banner titles)
+var font_si: Font     # Cormorant Garamond Italic (quotes)
 var theme: Theme
 var overlay: Control  # set by the app: sheets and modals go here
 
@@ -28,6 +30,13 @@ func _ready() -> void:
 	get_tree().root.add_child.call_deferred(soc)
 	font_d = load("res://fonts/Anton-Regular.ttf")
 	font_c = load("res://fonts/BarlowCondensed-Bold.ttf")
+	font_s = font_d
+	if ResourceLoader.exists("res://fonts/CormorantGaramond-Bold.ttf"):
+		var fs := FontVariation.new()   # lining figures: "×1" not "×I"
+		fs.base_font = load("res://fonts/CormorantGaramond-Bold.ttf")
+		fs.opentype_features = {TextServerManager.get_primary_interface().name_to_tag("lnum"): 1}
+		font_s = fs
+	font_si = load("res://fonts/CormorantGaramond-Italic.ttf") if ResourceLoader.exists("res://fonts/CormorantGaramond-Italic.ttf") else font_i
 	var inter := FontVariation.new()
 	inter.base_font = load("res://fonts/Inter.ttf")
 	inter.variation_opentype = {TextServerManager.get_primary_interface().name_to_tag("wght"): 600}
